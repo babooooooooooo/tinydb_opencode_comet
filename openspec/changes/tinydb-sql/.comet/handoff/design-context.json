@@ -1,0 +1,21 @@
+{
+  "change": "tinydb-sql",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "a1552d94405082679013efc38f4081284f07a86202cc33df807d90c6be7f0b34",
+  "files": [
+    { "path": "openspec/changes/tinydb-sql/proposal.md", "sha256": "506d7cfa0f1c2a318dcb39328d05a21c1019b50734e83bcf965470f4815b1862" },
+    { "path": "openspec/changes/tinydb-sql/design.md", "sha256": "3aa25146c3739a465b3672e1073c0b1dddccded398a471d7b46c985deb259557" },
+    { "path": "openspec/changes/tinydb-sql/tasks.md", "sha256": "47f98274c2bb0e6173b33ad6b7e604ba90549a2fb419e845cc90cdfa2c8b7577" },
+    { "path": "openspec/changes/tinydb-sql/specs/constraints/spec.md", "sha256": "4bcd312293b003efb18d5afe2dcc247953e937c74ec6a5911d8cec063d811cab" },
+    { "path": "openspec/changes/tinydb-sql/specs/ddl/spec.md", "sha256": "566a0d9657c63fcfdd440504ba33e1a6d13efdaea0c41d2620b9bcc9338fc9bb" },
+    { "path": "openspec/changes/tinydb-sql/specs/dml/spec.md", "sha256": "c6d4948963f5ded9e0a25b5d104d03fdabf3e03e422db6398a27a217231fce1c" },
+    { "path": "openspec/changes/tinydb-sql/specs/executor/spec.md", "sha256": "2733884eddd99926cf6be21e12a0b3898460e450446c503ae67be69865d00abc" },
+    { "path": "openspec/changes/tinydb-sql/specs/expressions/spec.md", "sha256": "d25a0673f61c5cd25145af39473c2c28ef6d02a3dc94ec89057e853593bf98b3" },
+    { "path": "openspec/changes/tinydb-sql/specs/lexer/spec.md", "sha256": "0c3164a39ad5370466ef58618f9623899220e339857427eccfcdc7542b6d1d1b" },
+    { "path": "openspec/changes/tinydb-sql/specs/parser/spec.md", "sha256": "fde9e97bfcb4397bc3cec44ac36ddfb465c66e3e19ecb403334f800b3eaa8bf1" },
+    { "path": "openspec/changes/tinydb-sql/specs/planner/spec.md", "sha256": "e80ca99cc4efed4cadeb2dbf74f44d83e3c183b50192deff743730e9bde27343" }
+  ]
+}

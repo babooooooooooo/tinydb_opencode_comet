@@ -1,0 +1,19 @@
+{
+  "change": "tinydb-index-txn",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "0626ac403a3011bbfd03215e70b4e17c65c8663ac2173b15fa06e9a8037a353e",
+  "files": [
+    { "path": "openspec/changes/tinydb-index-txn/proposal.md", "sha256": "229b75afcc9c90b39f00f06025451ab039640ab667e52bc1f2812beee98e38c8" },
+    { "path": "openspec/changes/tinydb-index-txn/design.md", "sha256": "8e69d350a8dc056352fab1a60b1f08f119fae24311a30ef5cd5e5db8a1755b5b" },
+    { "path": "openspec/changes/tinydb-index-txn/tasks.md", "sha256": "857d577b48dacaa715ea85194e4543b1f51f8f2e5a159ac56d95d50b502e8639" },
+    { "path": "openspec/changes/tinydb-index-txn/specs/btree-index/spec.md", "sha256": "1738fca87fc34e53b2f3fac7756b4ccbfb1aa235288235838965513869873c2e" },
+    { "path": "openspec/changes/tinydb-index-txn/specs/database/spec.md", "sha256": "1553eb2ac49d6558d134e01d50d662616e7d9784158bedf2c44006ec69355f28" },
+    { "path": "openspec/changes/tinydb-index-txn/specs/index-manager/spec.md", "sha256": "66e262f1b9dc4e60b0696bf51df6b974d868083071ae6bf8cc5f05e1f8edff8e" },
+    { "path": "openspec/changes/tinydb-index-txn/specs/repl/spec.md", "sha256": "ad31c2c788a4e1918d66a9054bac0fdbd81c635d8cf90b510dd773851d4b536f" },
+    { "path": "openspec/changes/tinydb-index-txn/specs/shadow-paging/spec.md", "sha256": "ae5343a60bdffa7a4cb0300b54cfe64b79cd728faec215a056b69651e3bb7c0d" },
+    { "path": "openspec/changes/tinydb-index-txn/specs/transaction/spec.md", "sha256": "3c83b36c80f21a23f39f8a8770bc60e69a4057ae890bb814751d5de548d69f7d" }
+  ]
+}
