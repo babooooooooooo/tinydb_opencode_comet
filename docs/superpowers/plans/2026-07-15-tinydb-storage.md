@@ -71,7 +71,7 @@ tests/
 - Consumes: nothing
 - Produces: `StorageError` 异常类, 模块常量 (`PAGE_SIZE`, `PAGE_HEADER_SIZE` 等)
 
-- [ ] **Step 1: Create pyproject.toml**
+- [x] **Step 1: Create pyproject.toml**
 
 ```toml
 [build-system]
@@ -90,7 +90,7 @@ python_files = ["test_*.py"]
 addopts = "-v --tb=short"
 ```
 
-- [ ] **Step 2: Create package init files**
+- [x] **Step 2: Create package init files**
 
 ```python
 # tinydb/__init__.py
@@ -101,7 +101,7 @@ addopts = "-v --tb=short"
 # tests/__init__.py
 ```
 
-- [ ] **Step 3: Create exceptions.py**
+- [x] **Step 3: Create exceptions.py**
 
 ```python
 # tinydb/exceptions.py
@@ -142,7 +142,7 @@ class SchemaMismatchError(StorageError):
     pass
 ```
 
-- [ ] **Step 4: Create constants.py**
+- [x] **Step 4: Create constants.py**
 
 ```python
 # tinydb/constants.py
@@ -169,7 +169,7 @@ PAGE_TYPE_INDEX = 3
 CATALOG_TABLE_NAME = "tinydb_master"
 ```
 
-- [ ] **Step 5: Create conftest.py with shared fixtures**
+- [x] **Step 5: Create conftest.py with shared fixtures**
 
 ```python
 # tests/conftest.py
@@ -201,12 +201,12 @@ def null_row(all_types_columns):
     return [2, None, None, False]
 ```
 
-- [ ] **Step 6: Verify project structure**
+- [x] **Step 6: Verify project structure**
 
 Run: `python -c "import tinydb; from tinydb.exceptions import StorageError; print('OK')"`
 Expected: `OK`
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add pyproject.toml tinydb/__init__.py tinydb/exceptions.py tinydb/constants.py tests/__init__.py tests/conftest.py
@@ -225,7 +225,7 @@ git commit -m "feat(storage): add project skeleton, exceptions, and constants"
 - Consumes: `constants.py`
 - Produces: `DataType`, `ColumnDef`, `Value`, `validate_value()`, `convert_value()`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_types.py
@@ -338,12 +338,12 @@ class TestValue:
         assert v1 == v2
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_types.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'tinydb.types'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # tinydb/types.py
@@ -433,12 +433,12 @@ def convert_value(value: object, column: ColumnDef) -> object:
     return value
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_types.py -v`
 Expected: PASS (19 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tinydb/types.py tests/test_types.py
@@ -457,7 +457,7 @@ git commit -m "feat(types): add DataType, ColumnDef, Value with type validation"
 - Consumes: `tinydb.types` (DataType, ColumnDef)
 - Produces: `serialize_row()`, `deserialize_row()`, `null_bitmap()`, `encode_null_flags()`, `decode_null_flags()`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_row_format.py
@@ -551,12 +551,12 @@ class TestDeserializeRow:
         assert result == row
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_row_format.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # tinydb/row_format.py
@@ -696,12 +696,12 @@ def deserialize_row(data: bytes, columns: list[ColumnDef]) -> list:
     return result
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_row_format.py -v`
 Expected: PASS (8 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tinydb/row_format.py tests/test_row_format.py
@@ -720,7 +720,7 @@ git commit -m "feat(row-format): implement NULL bitmap and row serialization"
 - Consumes: `tinydb.constants`, `tinydb.row_format`
 - Produces: `Page`, `PageType`, `RowId`, `create_empty_page()`, `parse_page_header()`, `pack_page_header()`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_page.py
@@ -832,12 +832,12 @@ class TestPageOperations:
         assert get_free_space(page) == MAX_FREE_SPACE
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_page.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # tinydb/page.py
@@ -1069,12 +1069,12 @@ def get_all_rows_from_page(page: Page) -> list[bytes]:
     return result
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_page.py -v`
 Expected: PASS (14 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tinydb/page.py tests/test_page.py
@@ -1093,7 +1093,7 @@ git commit -m "feat(page): implement Slotted Page with header, slots, and row op
 - Consumes: `tinydb.constants`, `tinydb.page`
 - Produces: `FileManager`, `open_database()`, `close_database()`, `read_page()`, `write_page()`, `alloc_page()`, `free_page()`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_file_manager.py
@@ -1187,12 +1187,12 @@ class TestFileManagerPageIO:
         fm2.close()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_file_manager.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # tinydb/file_manager.py
@@ -1409,12 +1409,12 @@ class FileManager:
         self._file.flush()
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_file_manager.py -v`
 Expected: PASS (9 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tinydb/file_manager.py tests/test_file_manager.py
@@ -1433,7 +1433,7 @@ git commit -m "feat(file-manager): implement file header, page I/O, free list al
 - Consumes: `tinydb.file_manager`, `tinydb.page`, `tinydb.constants`
 - Produces: `BufferPool`, `LRU_Node`, `get_page()`, `flush()`, `pin()`, `unpin()`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_buffer_pool.py
@@ -1563,12 +1563,12 @@ def _make_page_bytes(page_id: int) -> bytes:
     return bytes(data)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_buffer_pool.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # tinydb/buffer_pool.py
@@ -1734,12 +1734,12 @@ class BufferPool:
         return parse_page_header(data)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_buffer_pool.py -v`
 Expected: PASS (9 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tinydb/buffer_pool.py tests/test_buffer_pool.py
@@ -1758,7 +1758,7 @@ git commit -m "feat(buffer-pool): implement LRU cache with pin/unpin and dirty p
 - Consumes: `tinydb.buffer_pool`, `tinydb.file_manager`, `tinydb.page`, `tinydb.row_format`
 - Produces: `Catalog`, `TableMeta`, `load()`, `save()`, `create_table()`, `drop_table()`, `get_table()`, `list_tables()`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_catalog.py
@@ -1857,12 +1857,12 @@ class TestCatalog:
         fm2.close()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_catalog.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # tinydb/catalog.py
@@ -2081,12 +2081,12 @@ class Catalog:
         ]
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_catalog.py -v`
 Expected: PASS (7 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tinydb/catalog.py tests/test_catalog.py
@@ -2105,7 +2105,7 @@ git commit -m "feat(catalog): implement system catalog with table metadata persi
 - Consumes: `tinydb.buffer_pool`, `tinydb.catalog`, `tinydb.types`, `tinydb.row_format`
 - Produces: `Table`, `insert()`, `scan()`, `get()`, `delete()`, `update()`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_table.py
@@ -2213,12 +2213,12 @@ class TestTableCRUD:
         assert len(rows) == 100
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_table.py -v`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # tinydb/table.py
@@ -2365,7 +2365,7 @@ class Table:
         buffer_pool.mark_dirty(row_id.page_id)
 ```
 
-- [ ] **Step 4: Update Catalog to provide Table instances**
+- [x] **Step 4: Update Catalog to provide Table instances**
 
 Update `catalog.py` to make `get_table()` return a `Table` instance instead of just metadata. Modify the Catalog class:
 
@@ -2384,12 +2384,12 @@ def get_table(self, name: str) -> Table:
 
 Apply that change to `tinydb/catalog.py`.
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `pytest tests/test_table.py -v`
 Expected: PASS (10 tests)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tinydb/table.py tinydb/catalog.py tests/test_table.py
@@ -2406,7 +2406,7 @@ git commit -m "feat(table): implement insert/scan/get/delete/update CRUD API"
 **Interfaces:**
 - Consumes: all modules
 
-- [ ] **Step 1: Write integration tests**
+- [x] **Step 1: Write integration tests**
 
 ```python
 # tests/test_integration.py
@@ -2541,17 +2541,17 @@ class TestEndToEnd:
         assert ids == list(range(n_rows))
 ```
 
-- [ ] **Step 2: Run integration tests**
+- [x] **Step 2: Run integration tests**
 
 Run: `pytest tests/test_integration.py -v`
 Expected: PASS (4 tests)
 
-- [ ] **Step 3: Run full test suite**
+- [x] **Step 3: Run full test suite**
 
 Run: `pytest tests/ -v`
 Expected: PASS (all tests across all modules)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/test_integration.py
@@ -2569,7 +2569,7 @@ git commit -m "test(integration): add end-to-end CRUD and persistence tests"
 - Consumes: all modules
 - Produces: public API exports
 
-- [ ] **Step 1: Update public API**
+- [x] **Step 1: Update public API**
 
 ```python
 # tinydb/__init__.py
@@ -2613,12 +2613,12 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 2: Run full test suite**
+- [x] **Step 2: Run full test suite**
 
 Run: `pytest tests/ -v`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tinydb/__init__.py
