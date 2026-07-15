@@ -1,6 +1,7 @@
 # tests/test_executor.py
 import pytest
-from tinydb.sql.executor import IndexScanOperator, Planner
+from tinydb.sql.executor import IndexScanOperator
+from tinydb.sql.planner import Planner
 from tinydb.index.index_manager import IndexManager, IndexMeta
 from tinydb.types import DataType, ColumnDef
 from tinydb.page import RowId
@@ -65,27 +66,3 @@ class TestIndexScanOperator:
         assert len(results) == 2
 
 
-class TestPlanner:
-    def test_choose_index_scan(self, db_env):
-        fm, pool, cat, tbl, imgr = db_env
-        planner = Planner(imgr)
-
-        class MockCond:
-            column = "age"
-            op = "="
-            value = 30
-
-        scan = planner._choose_scan(tbl, MockCond())
-        assert isinstance(scan, IndexScanOperator)
-
-    def test_choose_full_scan_no_index(self, db_env):
-        fm, pool, cat, tbl, imgr = db_env
-        planner = Planner(imgr)
-
-        class MockCond:
-            column = "name"
-            op = "="
-            value = "Alice"
-
-        scan = planner._choose_scan(tbl, MockCond())
-        assert scan is None

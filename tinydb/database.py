@@ -7,7 +7,7 @@ from tinydb.buffer_pool import BufferPool
 from tinydb.catalog import Catalog
 from tinydb.index.index_manager import IndexManager
 from tinydb.transaction.txn_manager import TransactionManager, TransactionError
-from tinydb.sql.executor import Planner
+from tinydb.sql.planner import Planner
 from tinydb.types import ColumnDef, DataType, convert_value
 from tinydb.page import RowId
 
@@ -34,7 +34,7 @@ class Database:
         self._catalog.load()
         self._index_mgr = IndexManager(self._catalog, self._fm, self._pool)
         self._txn_mgr = TransactionManager(self._fm, self._pool, self._index_mgr)
-        self._planner = Planner(self._index_mgr)
+        self._planner = Planner(self._catalog, self._pool)
 
     def execute(self, sql: str) -> QueryResult:
         """Execute SQL and return result."""

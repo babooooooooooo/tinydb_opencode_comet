@@ -1,11 +1,340 @@
-# tinydb/sql/executor.py
-"""Index-aware query executor with planner."""
+"""Volcano model executor operators."""
+from tinydb.sql.expressions import (
+    Expression, ColumnRef, AggregateExpr, StarExpr, _to_bool,
+)
+from tinydb.sql.ast import (
+    SelectStatement, InsertStatement, UpdateStatement,
+    DeleteStatement, CreateTableStatement, DropTableStatement,
+)
+from tinydb.sql.errors import ExecutionError, ConstraintError
+from tinydb.sql.result import QueryResult
+from tinydb.types import ColumnDef, DataType
+
+
+class Operator:
+    """Base class for all operators (Volcano model)."""
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> dict:
+        raise NotImplementedError
+
+
+class ScanOperator(Operator):
+    """Full table scan operator."""
+
+    def __init__(self, table, buffer_pool):
+        self.table = table
+        self.buffer_pool = buffer_pool
+
+    def __iter__(self):
+        col_names = [col.name for col in self.table.columns]
+        for row_id, row_values in self.table.scan(self.buffer_pool):
+            yield {"_rowid": row_id, **dict(zip(col_names, row_values))}
+
+
+class FilterOperator(Operator):
+    """WHERE clause filter operator."""
+
+    def __init__(self, source: Operator, condition: Expression):
+        self.source = source
+        self.condition = condition
+
+    def __iter__(self):
+        for row in self.source:
+            val = self.condition.evaluate(row)
+            if _to_bool(val):
+                yield row
+
+
+class ProjectOperator(Operator):
+    """Column projection operator."""
+
+    def __init__(self, source: Operator, columns: list):
+        self.source = source
+        self.columns = columns
+
+    def __iter__(self):
+        for row in self.source:
+            result = {}
+            for alias, expr in self.columns:
+                if alias == '*' and isinstance(expr, StarExpr):
+                    for k, v in row.items():
+                        if k != '_rowid':
+                            result[k] = v
+                else:
+                    result[alias] = expr.evaluate(row)
+            yield result
+
+
+class AggregateOperator(Operator):
+    """Hash aggregation operator with GROUP BY."""
+
+    def __init__(self, source: Operator,
+                 group_keys: list,
+                 aggregations: list):
+        self.source = source
+        self.group_keys = group_keys
+        self.aggregations = aggregations
+
+    def __iter__(self):
+        groups: dict = {}
+
+        for row in self.source:
+            key = tuple(k.evaluate(row) for k in self.group_keys)
+            if key not in groups:
+                groups[key] = self._init_agg_state()
+
+            state = groups[key]
+            for i, (alias, func, arg_expr) in enumerate(self.aggregations):
+                if func == 'VALUE':
+                    state[i] = row.get(alias)
+                else:
+                    val = arg_expr.evaluate(row)
+                    state[i] = self._accumulate(func, state[i], val)
+
+        for key, state in groups.items():
+            result = {}
+            if self.group_keys:
+                for i, k_exp in enumerate(self.group_keys):
+                    if isinstance(k_exp, ColumnRef):
+                        result[k_exp.name] = key[i]
+
+            for i, (alias, func, _) in enumerate(self.aggregations):
+                if func == 'VALUE':
+                    result[alias] = state[i]
+                else:
+                    result[alias] = self._finalize(func, state[i])
+
+            yield result
+
+    def _init_agg_state(self) -> list:
+        return [None] * len(self.aggregations)
+
+    def _accumulate(self, func: str, state: object, val: object) -> object:
+        if func == 'COUNT':
+            return (state or 0) + 1
+        elif func == 'SUM':
+            if val is None:
+                return state
+            return (state or 0) + val
+        elif func == 'AVG':
+            if state is None:
+                state = (0, 0)
+            if val is not None:
+                return (state[0] + val, state[1] + 1)
+            return state
+        raise ValueError(f"Unknown aggregate function: {func}")
+
+    def _finalize(self, func: str, state: object) -> object:
+        if state is None:
+            return None
+        if func == 'AVG':
+            if state[1] == 0:
+                return None
+            return state[0] / state[1]
+        return state
+
+
+class SortOperator(Operator):
+    """ORDER BY sort operator."""
+
+    def __init__(self, source: Operator, order_keys: list):
+        self.source = source
+        self.order_keys = order_keys
+
+    def __iter__(self):
+        rows = list(self.source)
+        for expr, direction in reversed(self.order_keys):
+            rows.sort(
+                key=lambda r, e=expr: (e.evaluate(r) is None, e.evaluate(r) or 0),
+                reverse=(direction == 'DESC')
+            )
+        yield from rows
+
+
+class LimitOperator(Operator):
+    """LIMIT/OFFSET operator."""
+
+    def __init__(self, source: Operator, limit, offset: int):
+        self.source = source
+        self.limit = limit
+        self.offset = offset
+
+    def __iter__(self):
+        iterator = iter(self.source)
+        for _ in range(self.offset):
+            try:
+                next(iterator)
+            except StopIteration:
+                return
+
+        count = 0
+        for row in iterator:
+            if self.limit is not None and count >= self.limit:
+                return
+            yield row
+            count += 1
+
+
+class DmlOperator(Operator):
+    """DML (INSERT/UPDATE/DELETE) operator."""
+
+    def __init__(self, stmt, catalog, buffer_pool):
+        self.stmt = stmt
+        self.catalog = catalog
+        self.buffer_pool = buffer_pool
+
+    def __iter__(self):
+        result = self._execute()
+        yield {"_result": result}
+
+    def _execute(self) -> QueryResult:
+        if isinstance(self.stmt, InsertStatement):
+            return self._execute_insert()
+        elif isinstance(self.stmt, UpdateStatement):
+            return self._execute_update()
+        elif isinstance(self.stmt, DeleteStatement):
+            return self._execute_delete()
+
+    def _execute_insert(self) -> QueryResult:
+        table = self.catalog.get_table(self.stmt.table)
+        col_names = [col.name for col in table.columns]
+
+        for value_exprs in self.stmt.values:
+            row_values = [expr.evaluate({}) for expr in value_exprs]
+            if self.stmt.columns:
+                row_dict = dict(zip(self.stmt.columns, row_values))
+                ordered_row = [row_dict.get(cn) for cn in col_names]
+            else:
+                ordered_row = row_values
+            self._check_constraints(table, ordered_row)
+            table.insert(self.buffer_pool, ordered_row)
+
+        return QueryResult([], [], len(self.stmt.values))
+
+    def _execute_update(self) -> QueryResult:
+        table = self.catalog.get_table(self.stmt.table)
+        col_names = [col.name for col in table.columns]
+        updated = 0
+
+        for row_id, row_values in table.scan(self.buffer_pool):
+            row_dict = dict(zip(col_names, row_values))
+            if self.stmt.where is None or _to_bool(self.stmt.where.evaluate(row_dict)):
+                new_row = list(row_values)
+                for col_name, expr in self.stmt.assignments:
+                    col_idx = col_names.index(col_name)
+                    new_row[col_idx] = expr.evaluate(row_dict)
+                self._check_constraints_update(table, row_id, new_row)
+                table.update(self.buffer_pool, row_id, new_row)
+                updated += 1
+
+        return QueryResult([], [], updated)
+
+    def _execute_delete(self) -> QueryResult:
+        table = self.catalog.get_table(self.stmt.table)
+        col_names = [col.name for col in table.columns]
+        to_delete = []
+
+        for row_id, row_values in table.scan(self.buffer_pool):
+            row_dict = dict(zip(col_names, row_values))
+            if self.stmt.where is None or _to_bool(self.stmt.where.evaluate(row_dict)):
+                to_delete.append(row_id)
+
+        for row_id in to_delete:
+            table.delete(self.buffer_pool, row_id)
+
+        return QueryResult([], [], len(to_delete))
+
+    def _check_constraints(self, table, row) -> None:
+        for i, (val, col) in enumerate(zip(row, table.columns)):
+            if not col.nullable and val is None:
+                raise ConstraintError(
+                    f"NOT NULL constraint violated on column '{col.name}'"
+                )
+            if col.primary_key or col.unique:
+                self._check_unique(table, i, val, exclude_row_id=None)
+
+    def _check_constraints_update(self, table, row_id, new_row) -> None:
+        for i, (val, col) in enumerate(zip(new_row, table.columns)):
+            if not col.nullable and val is None:
+                raise ConstraintError(
+                    f"NOT NULL constraint violated on column '{col.name}'"
+                )
+            if col.primary_key or col.unique:
+                self._check_unique(table, i, val, exclude_row_id=row_id)
+
+    def _check_unique(self, table, col_idx, value, exclude_row_id) -> None:
+        for existing_id, existing_row in table.scan(self.buffer_pool):
+            if exclude_row_id is not None:
+                if (existing_id.page_id == exclude_row_id.page_id and
+                        existing_id.slot_index == exclude_row_id.slot_index):
+                    continue
+            if existing_row[col_idx] == value:
+                col = table.columns[col_idx]
+                raise ConstraintError(
+                    f"{'PRIMARY KEY' if col.primary_key else 'UNIQUE'} "
+                    f"constraint violated on column '{col.name}': "
+                    f"value {value!r} already exists"
+                )
+
+
+class CreateTableOperator(Operator):
+    """CREATE TABLE operator."""
+
+    def __init__(self, stmt, catalog):
+        self.stmt = stmt
+        self.catalog = catalog
+
+    def __iter__(self):
+        result = self._execute()
+        yield {"_result": result}
+
+    def _execute(self) -> QueryResult:
+        columns = []
+        pk = ""
+        for col_def in self.stmt.columns:
+            data_type = DataType(col_def.data_type.upper())
+            col = ColumnDef(
+                name=col_def.name,
+                data_type=data_type,
+                nullable=col_def.nullable,
+                primary_key=col_def.primary_key,
+                unique=col_def.unique,
+            )
+            columns.append(col)
+            if col.primary_key:
+                pk = col.name
+
+        self.catalog.create_table(self.stmt.table, columns, pk)
+        return QueryResult([], [], 0)
+
+
+class DropTableOperator(Operator):
+    """DROP TABLE operator."""
+
+    def __init__(self, stmt, catalog):
+        self.stmt = stmt
+        self.catalog = catalog
+
+    def __iter__(self):
+        result = self._execute()
+        yield {"_result": result}
+
+    def _execute(self) -> QueryResult:
+        self.catalog.drop_table(self.stmt.table)
+        return QueryResult([], [], 0)
+
+
+# === IndexScanOperator (integrated from tinydb-index-txn) ===
+
 from tinydb.index.btree import BTreeIndex
 from tinydb.index.index_manager import IndexMeta
 
 
 class IndexScanOperator:
-    """Scan using B-tree index for equality/range conditions."""
+    """使用 B-tree 索引进行等值/范围扫描的算子。"""
 
     def __init__(self, table, index_meta: IndexMeta, condition):
         self.table = table
@@ -29,33 +358,22 @@ class IndexScanOperator:
         elif op == "<=":
             results = btree.range_scan(start=None, end=key, end_inclusive=True)
         elif op == "!=":
+            # != 回退到全表扫描 + 过滤
+            results = []
             for row_ptr, row in self.table.scan(buffer_pool):
                 col_idx = next(
                     (i for i, c in enumerate(self.table.columns)
                      if c.name == self.condition.column), -1
                 )
                 if col_idx >= 0 and row[col_idx] != key:
-                    yield row_ptr, row
-            return
+                    results.append(row_ptr)
         else:
-            results = []
+            raise ValueError(f"Unsupported operator for index scan: {op}")
 
+        # 通过 row_ptr 从表中获取完整行
+        rows = []
         for row_ptr in results:
             row = self.table.get(buffer_pool, row_ptr)
             if row is not None:
-                yield row_ptr, row
-
-
-class Planner:
-    """Simple heuristic planner: use index if available."""
-
-    def __init__(self, index_manager=None):
-        self._index_mgr = index_manager
-
-    def _choose_scan(self, table, where_clause):
-        """Choose scan strategy. Returns IndexScanOperator or None (full scan)."""
-        if self._index_mgr and where_clause:
-            index = self._index_mgr.find_matching_index(table.table_name, where_clause)
-            if index:
-                return IndexScanOperator(table, index, where_clause)
-        return None
+                rows.append(row)
+        return rows
