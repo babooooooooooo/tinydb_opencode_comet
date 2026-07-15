@@ -41,17 +41,18 @@ class TestCatalog:
             catalog.create_table("users", columns, pk="id")
 
     def test_get_table_metadata(self, catalog):
+        from tinydb.table import Table
         columns = [
             ColumnDef(name="id", data_type=DataType.INTEGER, nullable=False),
             ColumnDef(name="name", data_type=DataType.TEXT),
         ]
         catalog.create_table("users", columns, pk="id")
-        meta = catalog.get_table("users")
-        assert isinstance(meta, TableMeta)
-        assert meta.table_name == "users"
-        assert meta.primary_key == "id"
-        assert len(meta.columns) == 2
-        assert meta.root_page > 0
+        tbl = catalog.get_table("users")
+        assert isinstance(tbl, Table)
+        assert tbl.table_name == "users"
+        assert tbl.primary_key == "id"
+        assert len(tbl.columns) == 2
+        assert tbl.root_page > 0
 
     def test_get_nonexistent_table_raises(self, catalog):
         with pytest.raises(TableNotFoundError):

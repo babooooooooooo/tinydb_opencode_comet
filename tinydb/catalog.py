@@ -11,6 +11,7 @@ import json
 from dataclasses import dataclass
 from tinydb.types import ColumnDef, DataType
 from tinydb.row_format import serialize_row, deserialize_row
+from tinydb.table import Table
 from tinydb.page import (
     Page, PageType, create_empty_page,
     insert_row_into_page, get_all_rows_from_page, parse_page_header,
@@ -64,6 +65,8 @@ class Catalog:
             raise TableExistsError(f"Table '{name}' already exists")
 
         root_page = self._fm.alloc_page()
+        empty_page = create_empty_page(root_page, PageType.DATA)
+        self._fm.write_page(root_page, empty_page.data)
 
         meta = TableMeta(
             table_name=name,
@@ -82,11 +85,12 @@ class Catalog:
 
         del self._tables[name]
 
-    def get_table(self, name: str) -> TableMeta:
-        """Get table metadata by name."""
+    def get_table(self, name: str) -> Table:
+        """Get a Table object for the named table."""
         if name not in self._tables:
             raise TableNotFoundError(f"Table '{name}' not found")
-        return self._tables[name]
+        meta = self._tables[name]
+        return Table(meta.table_name, meta.columns, meta.root_page, meta.primary_key)
 
     def list_tables(self) -> list[str]:
         """List all registered table names."""
