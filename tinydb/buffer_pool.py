@@ -96,7 +96,7 @@ class BufferPool:
         """Write all dirty pages to disk."""
         for node in self._cache.values():
             if node.page.dirty:
-                self._fm.write_page(node.page_id, node.page.page_type, node.page.data)
+                self._fm.write_page(node.page_id, node.page.data)
                 node.page.dirty = False
 
     # --- Internal doubly-linked list operations ---
@@ -132,7 +132,7 @@ class BufferPool:
 
         # Flush dirty page
         if candidate.page.dirty:
-            self._fm.write_page(candidate.page_id, candidate.page.page_type, candidate.page.data)
+            self._fm.write_page(candidate.page_id, candidate.page.data)
             candidate.page.dirty = False
 
         # Remove from linked list
