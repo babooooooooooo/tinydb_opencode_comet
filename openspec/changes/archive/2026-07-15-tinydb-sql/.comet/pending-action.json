@@ -1,0 +1,6 @@
+{
+  "id": "classic-archive:tinydb-sql",
+  "stepId": "full.archive.execute",
+  "type": "checkpoint",
+  "ref": "tinydb-sql"
+}
