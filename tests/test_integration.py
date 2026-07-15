@@ -128,3 +128,80 @@ class TestEndToEnd:
         # 验证按 id 排序
         ids = [r[1][0] for r in rows]
         assert ids == list(range(n_rows))
+
+
+class TestIndexTransactionIntegration:
+    def test_insert_select_with_index(self, tmp_path):
+        from tinydb.database import Database
+        db = Database(str(tmp_path / "test.db"))
+        db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER)")
+        db.execute("CREATE INDEX idx_age ON users (age)")
+
+        db.execute("INSERT INTO users VALUES (1, 'Alice', 30)")
+        db.execute("INSERT INTO users VALUES (2, 'Bob', 25)")
+        db.execute("INSERT INTO users VALUES (3, 'Carol', 35)")
+
+        result = db.execute("SELECT * FROM users WHERE age = 30")
+        assert result.row_count == 1
+        assert result.rows[0][1] == "Alice"
+        db.close()
+
+    def test_transaction_commit_persists(self, tmp_path):
+        from tinydb.database import Database
+        db = Database(str(tmp_path / "test.db"))
+        db.execute("CREATE TABLE kv (id INTEGER PRIMARY KEY, val TEXT)")
+
+        db.execute("BEGIN")
+        db.execute("INSERT INTO kv VALUES (1, 'hello')")
+        db.execute("COMMIT")
+
+        result = db.execute("SELECT * FROM kv")
+        assert result.row_count == 1
+        db.close()
+
+    def test_transaction_rollback_discards(self, tmp_path):
+        from tinydb.database import Database
+        db = Database(str(tmp_path / "test.db"))
+        db.execute("CREATE TABLE kv (id INTEGER PRIMARY KEY, val TEXT)")
+
+        db.execute("BEGIN")
+        db.execute("INSERT INTO kv VALUES (1, 'hello')")
+        db.execute("ROLLBACK")
+
+        result = db.execute("SELECT * FROM kv")
+        assert result.row_count == 0
+        db.close()
+
+    def test_rollback_restores_index(self, tmp_path):
+        from tinydb.database import Database
+        db = Database(str(tmp_path / "test.db"))
+        db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER)")
+        db.execute("CREATE INDEX idx_age ON users (age)")
+
+        db.execute("BEGIN")
+        db.execute("INSERT INTO users VALUES (1, 'Alice', 30)")
+        db.execute("ROLLBACK")
+
+        result = db.execute("SELECT * FROM users WHERE age = 30")
+        assert result.row_count == 0
+        db.close()
+
+    def test_crud_lifecycle(self, tmp_path):
+        from tinydb.database import Database
+        db = Database(str(tmp_path / "test.db"))
+        db.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, price FLOAT)")
+
+        db.execute("INSERT INTO items VALUES (1, 'Widget', 9.99)")
+        db.execute("INSERT INTO items VALUES (2, 'Gadget', 19.99)")
+
+        result = db.execute("SELECT * FROM items")
+        assert result.row_count == 2
+
+        db.execute("UPDATE items SET price = 14.99 WHERE id = 1")
+        result = db.execute("SELECT price FROM items WHERE id = 1")
+        assert result.rows[0][0] == 14.99
+
+        db.execute("DELETE FROM items WHERE id = 2")
+        result = db.execute("SELECT * FROM items")
+        assert result.row_count == 1
+        db.close()

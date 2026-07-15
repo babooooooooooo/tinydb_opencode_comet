@@ -1,6 +1,6 @@
 workflow: full
 language: zh-CN
-phase: archive
+phase: verify
 context_compression: off
 build_mode: executing-plans
 build_pause: null
@@ -13,12 +13,12 @@ auto_transition: true
 base_ref: null
 design_doc: docs/superpowers/specs/2026-07-15-tinydb-sql-design.md
 plan: null
-verify_result: pass
+verify_result: pending
 verification_report: docs/superpowers/reports/2026-07-15-tinydb-sql-verify.md
 branch_status: handled
 created_at: 2026-07-15
-verified_at: 2026-07-15
-archive_confirmation: confirmed
+verified_at: null
+archive_confirmation: null
 archived: false
 direct_override: null
 handoff_context: openspec/changes/tinydb-sql/.comet/handoff/design-context.json

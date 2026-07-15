@@ -12,7 +12,7 @@ SLOT_SIZE = 4
 MAGIC_BYTES = b"TINYDB\0"
 """数据库文件的魔数标识。"""
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 """数据库文件格式版本号。"""
 
 DEFAULT_BUFFER_POOL_CAPACITY = 100

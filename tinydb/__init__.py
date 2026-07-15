@@ -15,6 +15,11 @@ from tinydb.buffer_pool import BufferPool
 from tinydb.catalog import Catalog, TableMeta
 from tinydb.table import Table
 from tinydb.page import Page, PageType, RowId
+from tinydb.database import Database, QueryResult, DatabaseError
+from tinydb.index import BTreeIndex, IndexManager, IndexMeta
+from tinydb.transaction import Transaction, ShadowBufferPool, TransactionManager
+from tinydb.sql import IndexScanOperator, Planner
+from tinydb.cli import REPL
 
 __version__ = "0.1.0"
 
@@ -37,4 +42,16 @@ __all__ = [
     "Page",
     "PageType",
     "RowId",
+    "Database",
+    "QueryResult",
+    "DatabaseError",
+    "BTreeIndex",
+    "IndexManager",
+    "IndexMeta",
+    "Transaction",
+    "ShadowBufferPool",
+    "TransactionManager",
+    "IndexScanOperator",
+    "Planner",
+    "REPL",
 ]
