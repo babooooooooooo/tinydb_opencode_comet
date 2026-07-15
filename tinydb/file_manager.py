@@ -25,7 +25,7 @@ from tinydb.exceptions import StorageCorruptionError, PageOutOfRangeError
 
 # File header format (after 8-byte magic):
 # version(I) page_size(I) page_count(I) free_list_head(I) catalog_root(I) checksum(Q)
-_HEADER_FMT = "<IIIIIQ"
+_HEADER_FMT = "<IIIIIIQ"
 _HEADER_META_SIZE = struct.calcsize(_HEADER_FMT)
 _CHECKSUM_SIZE = struct.calcsize("<Q")
 # Number of bytes covered by the checksum (everything before it in the meta region)
@@ -39,6 +39,7 @@ class FileManager:
         self.page_count = 0
         self.free_list_head = 0
         self.catalog_root = 0
+        self.root_page_id = 0
 
     def open(self) -> None:
         """Open or create the database file."""
@@ -156,6 +157,7 @@ class FileManager:
         self.page_count = 1
         self.free_list_head = 0
         self.catalog_root = 0
+        self.root_page_id = 0
         self._write_header()
 
     def _read_header(self) -> None:
@@ -170,23 +172,28 @@ class FileManager:
                 f"Invalid magic bytes: expected {MAGIC_BYTES!r}, got {magic!r}"
             )
 
-        # Parse header fields
-        offset = 8  # after magic
-        fields = struct.unpack_from(_HEADER_FMT, raw_header, offset)
-        version, page_size, page_count, free_list_head, catalog_root, checksum = fields
+        offset = 8
+        version = struct.unpack_from("<I", raw_header, offset)[0]
 
-        if version != FORMAT_VERSION:
-            raise StorageCorruptionError(
-                f"Unsupported version: {version}, expected {FORMAT_VERSION}"
-            )
+        if version == 2:
+            fields = struct.unpack_from(_HEADER_FMT, raw_header, offset)
+            version, page_size, page_count, free_list_head, catalog_root, root_page_id, checksum = fields
+            header_data = raw_header[offset:offset + _HEADER_DATA_SIZE]
+        elif version == 1:
+            _V1_FMT = "<IIIIIQ"
+            fields = struct.unpack_from(_V1_FMT, raw_header, offset)
+            version, page_size, page_count, free_list_head, catalog_root, checksum = fields
+            root_page_id = catalog_root
+            _v1_data_size = struct.calcsize(_V1_FMT) - _CHECKSUM_SIZE
+            header_data = raw_header[offset:offset + _v1_data_size]
+        else:
+            raise StorageCorruptionError(f"Unsupported version: {version}")
 
         if page_size != PAGE_SIZE:
             raise StorageCorruptionError(
                 f"Page size mismatch: {page_size} != {PAGE_SIZE}"
             )
 
-        # Verify checksum over the data region (excluding the checksum field itself)
-        header_data = raw_header[offset:offset + _HEADER_DATA_SIZE]
         computed_checksum = zlib.crc32(header_data) & 0xFFFFFFFFFFFFFFFF
         if computed_checksum != checksum:
             raise StorageCorruptionError(
@@ -197,6 +204,7 @@ class FileManager:
         self.page_count = page_count
         self.free_list_head = free_list_head
         self.catalog_root = catalog_root
+        self.root_page_id = root_page_id
 
     def _write_header(self) -> None:
         """Write header page to disk."""
@@ -214,6 +222,7 @@ class FileManager:
             self.page_count,
             self.free_list_head,
             self.catalog_root,
+            self.root_page_id,
             0,  # placeholder checksum
         )
 
