@@ -36,10 +36,16 @@ class TransactionManager:
         if self._active_txn is None:
             raise TransactionError("No active transaction")
         self._pool.flush()
+        for orig_id, shadow_id in list(self._active_txn.shadow_pages.items()):
+            shadow_data = self._pool._fm.read_page(shadow_id)
+            self._pool._fm.write_page(orig_id, shadow_data)
         self._fm.root_page_id = self._active_txn.new_root
         self._fm._write_header()
         self._fm._file.flush()
         os.fsync(self._fm._file.fileno())
+        self._pool._cache.clear()
+        self._pool._head = None
+        self._pool._tail = None
         self._active_txn.state = "committed"
         self._active_txn = None
 
