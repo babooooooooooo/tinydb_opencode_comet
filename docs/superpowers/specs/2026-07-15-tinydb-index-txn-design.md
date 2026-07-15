@@ -2,6 +2,8 @@
 comet_change: tinydb-index-txn
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-07-15-tinydb-index-txn
+status: final
 ---
 
 # tinydb-index-txn Design Doc
