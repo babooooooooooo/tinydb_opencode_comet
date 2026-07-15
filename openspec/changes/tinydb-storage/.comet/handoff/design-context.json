@@ -1,0 +1,18 @@
+{
+  "change": "tinydb-storage",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "e006a63ec2de7262b86769d281da76a21fa7ea63555f0c5c974b5b70381c010e",
+  "files": [
+    { "path": "openspec/changes/tinydb-storage/proposal.md", "sha256": "ff56710287c8f484538ac8e99d08df479115ffbd7d8dc79c7b71175164bd3538" },
+    { "path": "openspec/changes/tinydb-storage/design.md", "sha256": "ad02ffa439b3cb94f24369f0d126b5a555098de3a06c33f442d4cdf75b3255ce" },
+    { "path": "openspec/changes/tinydb-storage/tasks.md", "sha256": "aa86722930b5cce630d89688b73e00c775538efebdfadbef49f54c5cfd7f82d2" },
+    { "path": "openspec/changes/tinydb-storage/specs/buffer-pool/spec.md", "sha256": "ff801171d18b15734e61ad9ebc76fd892ee4e5af9f93c5171ad70befc6fc3563" },
+    { "path": "openspec/changes/tinydb-storage/specs/file-format/spec.md", "sha256": "7a6788bdc2ac255c6c8df649a3a0b4d59745b5cf55a8cd1b42437170a8317cec" },
+    { "path": "openspec/changes/tinydb-storage/specs/page-storage/spec.md", "sha256": "b421bb4df769eccf28040736ea54cc0701c0199b41f09dc03f9b37027934bffc" },
+    { "path": "openspec/changes/tinydb-storage/specs/row-format/spec.md", "sha256": "97f7d57d153ecaa30956819e014ffd50f4b88e7846e48ff36e9e9137d4ca0be1" },
+    { "path": "openspec/changes/tinydb-storage/specs/type-system/spec.md", "sha256": "c44d5aae1a347e57bcc1d6050aedee7589530fb6d5ce6bff1cb4ce20547d8b58" }
+  ]
+}
