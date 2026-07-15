@@ -2,6 +2,8 @@
 comet_change: tinydb-storage
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-07-15-tinydb-storage
+status: final
 ---
 
 # tinydb-storage 技术设计文档

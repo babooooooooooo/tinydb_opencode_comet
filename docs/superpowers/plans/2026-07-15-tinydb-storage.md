@@ -2,6 +2,7 @@
 change: tinydb-storage
 design-doc: docs/superpowers/specs/2026-07-15-tinydb-storage-design.md
 base-ref: null
+archived-with: 2026-07-15-tinydb-storage
 ---
 
 # tinydb-storage Implementation Plan
