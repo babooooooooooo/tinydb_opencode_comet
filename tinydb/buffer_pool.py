@@ -6,6 +6,10 @@ Two-layer design for educational clarity:
 
 The doubly-linked list is the "source of truth" for eviction order.
 OrderedDict provides fast membership checks.
+
+NOTE: get_page() returns raw bytes (not a Page object) deliberately.
+Table-level code works with mutable bytearray views for in-place edits,
+so the pool exposes bytes while callers manage their own deserialization.
 """
 from collections import OrderedDict
 
@@ -66,6 +70,12 @@ class BufferPool:
     def mark_dirty(self, page_id: int) -> None:
         """Mark a cached page as dirty."""
         if page_id in self._cache:
+            self._cache[page_id].page.dirty = True
+
+    def set_page_data(self, page_id: int, data: bytes) -> None:
+        """Update cached page data and mark it dirty."""
+        if page_id in self._cache:
+            self._cache[page_id].page.data = data
             self._cache[page_id].page.dirty = True
 
     def pin(self, page_id: int) -> None:

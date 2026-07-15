@@ -69,9 +69,7 @@ class Table:
                     flags=prev_header["flags"],
                 )
                 prev_data[:len(new_header)] = new_header
-                buffer_pool._cache[last_page_id].page.data = bytes(prev_data)
-                buffer_pool._cache[last_page_id].page.dirty = True
-                buffer_pool.mark_dirty(last_page_id)
+                buffer_pool.set_page_data(last_page_id, bytes(prev_data))
 
             # Create new empty data page
             new_page = create_empty_page(new_page_id, PageType.DATA)
@@ -84,8 +82,7 @@ class Table:
         slot_idx = insert_row_into_page(page, serialized)
 
         # Mark dirty in buffer pool
-        buffer_pool._cache[data_page_id].page.data = page.data
-        buffer_pool.mark_dirty(data_page_id)
+        buffer_pool.set_page_data(data_page_id, page.data)
 
         return RowId(page_id=data_page_id, slot_index=slot_idx)
 
@@ -94,9 +91,11 @@ class Table:
         page_id = self.root_page
 
         while page_id != 0:
+            buffer_pool.pin(page_id)
             page_data = buffer_pool.get_page(page_id)
             header = parse_page_header(page_data)
             if header["page_type"] != PageType.DATA:
+                buffer_pool.unpin(page_id)
                 break
 
             # Read all valid rows from this page
@@ -109,6 +108,7 @@ class Table:
                 if values is not None:
                     yield RowId(page_id=page_id, slot_index=slot_idx), values
 
+            buffer_pool.unpin(page_id)
             page_id = header["next_page_id"]
 
     def get(self, buffer_pool, row_id: RowId) -> list | None:
@@ -127,11 +127,10 @@ class Table:
         delete_row_from_page(page, row_id.slot_index)
 
         # Mark dirty
-        buffer_pool._cache[row_id.page_id].page.data = page.data
-        buffer_pool.mark_dirty(row_id.page_id)
+        buffer_pool.set_page_data(row_id.page_id, page.data)
 
-    def update(self, buffer_pool, row_id: RowId, new_row: list) -> None:
-        """Update a row, preserving the original RowId (slot index)."""
+    def update(self, buffer_pool, row_id: RowId, new_row: list) -> RowId:
+        """更新行。空间足够时原地更新并保留原 RowId，否则删除旧行后重新插入并返回新 RowId。"""
         # Validate and convert
         converted = []
         for val, col in zip(new_row, self.columns):
@@ -173,18 +172,15 @@ class Table:
                 flags=header["flags"],
             )
             page_data[:32] = new_header
+            buffer_pool.set_page_data(row_id.page_id, bytes(page_data))
+            return row_id
         else:
             # Not enough space: delete old + insert new on same page chain
             # Mark old slot deleted
             struct.pack_into("<HH", page_data, slot_off, 0, 0)
-            buffer_pool._cache[row_id.page_id].page.data = bytes(page_data)
-            buffer_pool.mark_dirty(row_id.page_id)
+            buffer_pool.set_page_data(row_id.page_id, bytes(page_data))
             # Re-insert using insert logic
-            self.insert(buffer_pool, new_row)
-            return
-
-        buffer_pool._cache[row_id.page_id].page.data = bytes(page_data)
-        buffer_pool.mark_dirty(row_id.page_id)
+            return self.insert(buffer_pool, new_row)
 
 
 def _page_from_data(page_id: int, data: bytes):

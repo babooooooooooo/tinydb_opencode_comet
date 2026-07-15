@@ -1,6 +1,10 @@
 # tinydb/catalog.py
 """System catalog: manages table metadata in tinydb_master table.
 
+NOTE: Catalog 直接使用 FileManager 读写，绕过 buffer pool。
+这是有意的设计选择：catalog 写入后通常立即通过 save()/flush() 持久化，
+属于 write-through 语义，不需要 buffer pool 的缓存层。
+
 tinydb_master table schema:
   - table_name: TEXT (primary key)
   - columns:    TEXT (JSON array of column definitions)
@@ -79,10 +83,12 @@ class Catalog:
         self._write_table_meta(meta)
 
     def drop_table(self, name: str) -> None:
-        """Remove a table from the catalog."""
+        """Remove a table from the catalog and free its root page."""
         if name not in self._tables:
             raise TableNotFoundError(f"Table '{name}' not found")
 
+        meta = self._tables[name]
+        self._fm.free_page(meta.root_page)
         del self._tables[name]
 
     def get_table(self, name: str) -> Table:
