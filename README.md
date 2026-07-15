@@ -18,49 +18,6 @@
 
 ## 快速开始
 
-```python
-from tinydb import Database
-
-# 打开（或创建）数据库
-db = Database("mydata.db")
-
-# 建表
-db.execute("""
-    CREATE TABLE users (
-        id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        age INTEGER,
-        score FLOAT
-    )
-""")
-
-# 插入数据
-db.execute("INSERT INTO users (id, name, age, score) VALUES (1, 'Alice', 30, 95.5)")
-db.execute("INSERT INTO users (id, name, age, score) VALUES (2, 'Bob', 25, 88.0)")
-db.execute("INSERT INTO users (id, name, age, score) VALUES (3, 'Charlie', 35, 92.3)")
-
-# 条件查询
-result = db.execute("SELECT name, score FROM users WHERE age > 25 ORDER BY score DESC")
-for row in result.rows:
-    print(row)
-
-# 聚合
-result = db.execute("SELECT COUNT(*), AVG(score) FROM users")
-print(f"总数: {result.rows[0][0]}, 平均分: {result.rows[0][1]:.2f}")
-
-# 事务
-db.execute("BEGIN")
-db.execute("UPDATE users SET score = 99.0 WHERE name = 'Alice'")
-db.execute("COMMIT")
-
-# 创建索引
-db.execute("CREATE INDEX idx_age ON users (age)")
-
-db.close()
-```
-
-或使用 REPL：
-
 ```bash
 python -m tinydb.cli
 tinydb> CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);
