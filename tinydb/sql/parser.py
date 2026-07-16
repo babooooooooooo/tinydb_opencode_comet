@@ -56,7 +56,7 @@ class Parser:
         order_by = self._parse_order_by() if self._check(TokenType.ORDER) else None
         limit = self._parse_limit() if self._match(TokenType.LIMIT) else None
         offset = self._parse_offset() if self._match(TokenType.OFFSET) else None
-        return SelectStatement(columns, table, where, order_by, limit, offset, group_by)
+        return SelectStatement(columns=columns, table=table, where=where, order_by=order_by, limit=limit, offset=offset, group_by=group_by)
 
     def _parse_select_columns(self) -> list:
         if self._peek().type == TokenType.STAR:
