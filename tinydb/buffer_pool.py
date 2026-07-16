@@ -18,6 +18,22 @@ from tinydb.exceptions import PageOutOfRangeError
 from tinydb.page import Page, PageType, parse_page_header
 
 
+def _get_lock_mgr(pool):
+    """Lazily initialize and return the pool's LockManager."""
+    from tinydb.concurrency.lock_manager import LockManager
+    if not hasattr(pool, '_lock_mgr'):
+        pool._lock_mgr = LockManager()
+    return pool._lock_mgr
+
+
+def _get_mvcc(pool):
+    """Lazily initialize and return the pool's MVCCManager."""
+    from tinydb.concurrency.mvcc_manager import MVCCManager
+    if not hasattr(pool, '_mvcc'):
+        pool._mvcc = MVCCManager()
+    return pool._mvcc
+
+
 class LRU_Node:
     """Doubly-linked list node for LRU tracking."""
 
@@ -78,29 +94,38 @@ class BufferPool:
             self._cache[page_id].page.data = data
             self._cache[page_id].page.dirty = True
 
-    def pin(self, page_id: int) -> None:
-        """Pin a page to prevent eviction. Fetches from disk if not cached."""
+    def pin(self, page_id: int, txn_id: int | None = None, mode=None) -> None:
+        """Pin a page to prevent eviction. Optionally acquires a lock."""
+        from tinydb.concurrency.lock_manager import LockMode
         if page_id in self._cache:
             self._cache[page_id].ref_count += 1
-            return
+        else:
+            # Fetch from disk and pin immediately
+            raw = self._fm.read_page(page_id)
+            header = parse_page_header(raw)
+            page = Page(
+                page_id=page_id,
+                page_type=header["page_type"],
+                data=raw,
+                dirty=False,
+            )
+            self._insert_page(page_id, page, pinned=True)
 
-        # Fetch from disk and pin immediately
-        raw = self._fm.read_page(page_id)
-        header = parse_page_header(raw)
-        page = Page(
-            page_id=page_id,
-            page_type=header["page_type"],
-            data=raw,
-            dirty=False,
-        )
-        self._insert_page(page_id, page, pinned=True)
+        # Acquire lock if txn_id and mode provided
+        if txn_id is not None and mode is not None:
+            lock_mgr = _get_lock_mgr(self)
+            lock_mgr.acquire(txn_id, page_id, mode)
 
-    def unpin(self, page_id: int) -> None:
-        """Unpin a page, making it eligible for eviction again."""
+    def unpin(self, page_id: int, txn_id: int | None = None) -> None:
+        """Unpin a page. Optionally releases a lock."""
         if page_id in self._cache:
             node = self._cache[page_id]
             if node.ref_count > 0:
                 node.ref_count -= 1
+
+        # Release lock if txn_id provided
+        if txn_id is not None and hasattr(self, '_lock_mgr'):
+            self._lock_mgr.release(txn_id, page_id)
 
     def flush(self) -> None:
         """Write all dirty pages to disk."""

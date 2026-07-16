@@ -107,6 +107,38 @@ class TestBufferPool:
         mock_fm.write_page.assert_called_once()
 
 
+class TestBufferPoolLockIntegration:
+    @pytest.fixture
+    def mock_fm(self):
+        fm = MagicMock()
+        fm.read_page.side_effect = lambda pid: _make_page_bytes(pid)
+        fm.page_count = 100
+        return fm
+
+    def test_pin_acquires_lock(self, mock_fm):
+        from tinydb.concurrency.lock_manager import LockMode
+        pool = BufferPool(mock_fm, capacity=10)
+        pool.pin(page_id=1, txn_id=1, mode=LockMode.SHARED)
+        holders = pool._lock_mgr.get_lock_holders(1)
+        assert 1 in holders
+
+    def test_unpin_releases_lock(self, mock_fm):
+        from tinydb.concurrency.lock_manager import LockMode
+        pool = BufferPool(mock_fm, capacity=10)
+        pool.pin(page_id=1, txn_id=1, mode=LockMode.SHARED)
+        pool.unpin(page_id=1, txn_id=1)
+        holders = pool._lock_mgr.get_lock_holders(1)
+        assert 1 not in holders
+
+    def test_pin_exclusive_blocks_other(self, mock_fm):
+        from tinydb.concurrency.lock_manager import LockMode
+        pool = BufferPool(mock_fm, capacity=10)
+        pool.pin(page_id=1, txn_id=1, mode=LockMode.EXCLUSIVE)
+        # txn 2 should not be able to acquire SHARED immediately
+        result = pool._lock_mgr.acquire(2, 1, LockMode.SHARED, timeout=0.1)
+        assert result is False
+
+
 def _make_page_bytes(page_id: int) -> bytes:
     """Helper to create valid page bytes for mock read_page."""
     data = bytearray(PAGE_SIZE)
