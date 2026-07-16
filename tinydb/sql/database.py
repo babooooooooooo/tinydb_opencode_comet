@@ -55,8 +55,15 @@ class Database:
         columns = []
         for col in stmt.columns:
             if isinstance(col, StarExpr):
-                table = self.catalog.get_table(stmt.table)
-                columns.extend(c.name for c in table.columns)
+                if stmt.joins:
+                    # Collect columns from all joined tables
+                    all_tables = [stmt.from_table] + [j.right_table for j in stmt.joins]
+                    for tref in all_tables:
+                        table = self.catalog.get_table(tref.name)
+                        columns.extend(c.name for c in table.columns)
+                else:
+                    table = self.catalog.get_table(stmt.from_table.name)
+                    columns.extend(c.name for c in table.columns)
             elif isinstance(col, ColumnRef):
                 columns.append(col.name)
             elif isinstance(col, AggregateExpr):
