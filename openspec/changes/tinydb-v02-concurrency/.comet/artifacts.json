@@ -1,0 +1,5 @@
+{
+  "openspec_proposal": "openspec/changes/tinydb-v02-concurrency/proposal.md",
+  "openspec_design": "openspec/changes/tinydb-v02-concurrency/design.md",
+  "openspec_tasks": "openspec/changes/tinydb-v02-concurrency/tasks.md"
+}

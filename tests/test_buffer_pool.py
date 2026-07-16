@@ -107,6 +107,74 @@ class TestBufferPool:
         mock_fm.write_page.assert_called_once()
 
 
+class TestBufferPoolLockIntegration:
+    @pytest.fixture
+    def mock_fm(self):
+        fm = MagicMock()
+        fm.read_page.side_effect = lambda pid: _make_page_bytes(pid)
+        fm.page_count = 100
+        return fm
+
+    def test_pin_acquires_lock(self, mock_fm):
+        from tinydb.concurrency.lock_manager import LockMode
+        pool = BufferPool(mock_fm, capacity=10)
+        pool.pin(page_id=1, txn_id=1, mode=LockMode.SHARED)
+        holders = pool._lock_mgr.get_lock_holders(1)
+        assert 1 in holders
+
+    def test_unpin_releases_lock(self, mock_fm):
+        from tinydb.concurrency.lock_manager import LockMode
+        pool = BufferPool(mock_fm, capacity=10)
+        pool.pin(page_id=1, txn_id=1, mode=LockMode.SHARED)
+        pool.unpin(page_id=1, txn_id=1)
+        holders = pool._lock_mgr.get_lock_holders(1)
+        assert 1 not in holders
+
+    def test_pin_exclusive_blocks_other(self, mock_fm):
+        from tinydb.concurrency.lock_manager import LockMode
+        pool = BufferPool(mock_fm, capacity=10)
+        pool.pin(page_id=1, txn_id=1, mode=LockMode.EXCLUSIVE)
+        # txn 2 should not be able to acquire SHARED immediately
+        result = pool._lock_mgr.acquire(2, 1, LockMode.SHARED, timeout=0.1)
+        assert result is False
+
+
+class TestBufferPoolMVCCIntegration:
+    @pytest.fixture
+    def mock_fm(self):
+        fm = MagicMock()
+        fm.read_page.side_effect = lambda pid: _make_page_bytes(pid)
+        fm.page_count = 100
+        return fm
+
+    def test_get_page_with_snapshot(self, mock_fm):
+        from tinydb.concurrency.mvcc_manager import Snapshot
+        pool = BufferPool(mock_fm, capacity=10)
+        # Create a version in MVCC
+        pool._mvcc.create_version(1, b"version_data_1", txn_id=1)
+        snap = Snapshot(active_txns={1}, timestamp=0.0)
+        result = pool.get_page(1, txn_id=1, snapshot=snap)
+        assert result == b"version_data_1"
+
+    def test_get_page_without_snapshot_returns_raw(self, mock_fm):
+        pool = BufferPool(mock_fm, capacity=10)
+        result = pool.get_page(1)
+        assert isinstance(result, bytes)
+        assert len(result) == PAGE_SIZE
+
+    def test_get_page_mvcc_fallback_to_disk(self, mock_fm):
+        """If no MVCC version visible, fall back to disk read."""
+        from tinydb.concurrency.mvcc_manager import Snapshot
+        pool = BufferPool(mock_fm, capacity=10)
+        pool._mvcc.create_version(1, b"v1", txn_id=1)
+        # Snapshot where txn 1 is NOT active → no visible version
+        snap = Snapshot(active_txns={2}, timestamp=0.0)
+        result = pool.get_page(1, txn_id=2, snapshot=snap)
+        # Falls back to disk
+        assert isinstance(result, bytes)
+        assert len(result) == PAGE_SIZE
+
+
 def _make_page_bytes(page_id: int) -> bytes:
     """Helper to create valid page bytes for mock read_page."""
     data = bytearray(PAGE_SIZE)
