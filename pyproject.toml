@@ -7,6 +7,9 @@ name = "tinydb"
 version = "0.1.0"
 description = "A tiny embedded relational database for learning"
 requires-python = ">=3.10"
+dependencies = [
+    "pygments>=2.10",
+]
 
 [tool.setuptools.packages.find]
 include = ["tinydb*"]
