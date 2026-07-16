@@ -57,12 +57,27 @@ class BufferPool:
         self._head: LRU_Node | None = None  # most recently used
         self._tail: LRU_Node | None = None  # least recently used
 
+        # Concurrency control
+        from tinydb.concurrency.lock_manager import LockManager
+        from tinydb.concurrency.mvcc_manager import MVCCManager
+        self._lock_mgr = LockManager()
+        self._mvcc = MVCCManager()
+
     @property
     def size(self) -> int:
         return len(self._cache)
 
-    def get_page(self, page_id: int) -> bytes:
-        """Get a page from cache or disk."""
+    def get_page(self, page_id: int, txn_id: int | None = None, snapshot=None) -> bytes:
+        """Get a page from cache or disk. If snapshot provided, return MVCC visible version."""
+        from tinydb.concurrency.mvcc_manager import Snapshot
+        # Try MVCC first if snapshot provided
+        if snapshot is not None:
+            mvcc = _get_mvcc(self)
+            mvcc_data = mvcc.get_visible_version(page_id, snapshot)
+            if mvcc_data is not None:
+                return mvcc_data
+            # No visible version — fall through to disk/cache
+
         if page_id in self._cache:
             node = self._cache[page_id]
             self._cache.move_to_end(page_id)
