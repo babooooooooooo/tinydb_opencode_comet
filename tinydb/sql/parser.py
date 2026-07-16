@@ -3,7 +3,7 @@ from tinydb.sql.lexer import Token, TokenType, Lexer
 from tinydb.sql.ast import (
     SelectStatement, InsertStatement, UpdateStatement,
     DeleteStatement, CreateTableStatement, DropTableStatement,
-    ColumnDefAST,
+    ColumnDefAST, TableRef, JoinClause,
 )
 from tinydb.sql.expressions import (
     Expression, ColumnRef, Literal, BinaryOp, UnaryOp,
@@ -14,6 +14,12 @@ from tinydb.sql.errors import ParserError
 
 class Parser:
     """Recursive descent parser for SQL statements."""
+
+    _JOIN_KEYWORD_TYPES = frozenset({
+        TokenType.JOIN, TokenType.INNER, TokenType.LEFT,
+        TokenType.RIGHT, TokenType.FULL, TokenType.CROSS,
+        TokenType.NATURAL,
+    })
 
     def __init__(self):
         self._tokens: list = []
@@ -26,6 +32,80 @@ class Parser:
         stmt = self._parse_statement()
         self._expect(TokenType.EOF)
         return stmt
+
+    def _is_join_keyword(self) -> bool:
+        """Check if current token starts a JOIN clause."""
+        return self._peek().type in self._JOIN_KEYWORD_TYPES
+
+    def _parse_table_ref(self) -> TableRef:
+        """Parse table name with optional alias: name [AS] alias."""
+        name = self._expect(TokenType.IDENT).value
+        alias = None
+        if self._match(TokenType.AS):
+            alias = self._expect(TokenType.IDENT).value
+        elif (self._check(TokenType.IDENT) and
+              self._peek().type not in self._JOIN_KEYWORD_TYPES):
+            alias = self._advance().value
+        return TableRef(name, alias)
+
+    def _parse_join_clauses(self) -> list:
+        """Parse zero or more JOIN clauses."""
+        joins = []
+        while self._is_join_keyword():
+            joins.append(self._parse_join_clause())
+        return joins
+
+    def _parse_join_clause(self) -> JoinClause:
+        """Parse a single JOIN clause."""
+        join_type = "INNER"  # default
+
+        if self._match(TokenType.INNER):
+            self._expect(TokenType.JOIN)
+            join_type = "INNER"
+        elif self._match(TokenType.LEFT):
+            self._match(TokenType.OUTER)  # optional
+            self._expect(TokenType.JOIN)
+            join_type = "LEFT"
+        elif self._match(TokenType.RIGHT):
+            self._match(TokenType.OUTER)
+            self._expect(TokenType.JOIN)
+            join_type = "RIGHT"
+        elif self._match(TokenType.FULL):
+            self._match(TokenType.OUTER)
+            self._expect(TokenType.JOIN)
+            join_type = "FULL"
+        elif self._match(TokenType.CROSS):
+            self._expect(TokenType.JOIN)
+            join_type = "CROSS"
+        elif self._match(TokenType.NATURAL):
+            self._expect(TokenType.JOIN)
+            join_type = "NATURAL"
+        else:
+            self._expect(TokenType.JOIN)
+            join_type = "INNER"
+
+        right_table = self._parse_table_ref()
+        on_condition = None
+        using_columns = None
+
+        if self._match(TokenType.ON):
+            on_condition = self._parse_expression()
+        elif self._match(TokenType.USING):
+            self._expect(TokenType.LPAREN)
+            using_columns = []
+            while self._peek().type == TokenType.IDENT:
+                using_columns.append(self._advance().value)
+                if not self._match(TokenType.COMMA):
+                    break
+            self._expect(TokenType.RPAREN)
+        elif join_type not in ("CROSS", "NATURAL"):
+            tok = self._peek()
+            raise ParserError(
+                f"Expected ON or USING after JOIN table reference, got {tok.text}",
+                tok.line, tok.column,
+            )
+
+        return JoinClause(join_type, right_table, on_condition, using_columns)
 
     def _parse_statement(self) -> object:
         tok = self._peek()
@@ -50,13 +130,14 @@ class Parser:
         self._expect(TokenType.SELECT)
         columns = self._parse_select_columns()
         self._expect(TokenType.FROM)
-        table = self._expect(TokenType.IDENT).value
+        from_table = self._parse_table_ref()
+        joins = self._parse_join_clauses()
         where = self._parse_where() if self._match(TokenType.WHERE) else None
         group_by = self._parse_group_by() if self._check(TokenType.GROUP) else None
         order_by = self._parse_order_by() if self._check(TokenType.ORDER) else None
         limit = self._parse_limit() if self._match(TokenType.LIMIT) else None
         offset = self._parse_offset() if self._match(TokenType.OFFSET) else None
-        return SelectStatement(columns=columns, table=table, where=where, order_by=order_by, limit=limit, offset=offset, group_by=group_by)
+        return SelectStatement(columns=columns, table=from_table.name, from_table=from_table, joins=joins, where=where, order_by=order_by, limit=limit, offset=offset, group_by=group_by)
 
     def _parse_select_columns(self) -> list:
         if self._peek().type == TokenType.STAR:
@@ -314,6 +395,12 @@ class Parser:
 
         if tok.type == TokenType.IDENT:
             self._advance()
+            # Check for table.column qualified name
+            if self._peek().type == TokenType.DOT:
+                table = tok.value
+                self._advance()  # consume DOT
+                col_tok = self._expect(TokenType.IDENT)
+                return ColumnRef(col_tok.value, table=table)
             return ColumnRef(tok.value)
 
         raise ParserError(
