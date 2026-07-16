@@ -34,6 +34,124 @@ class ScanOperator(Operator):
             yield {"_rowid": row_id, **dict(zip(col_names, row_values))}
 
 
+class NestedLoopJoinOperator(Operator):
+    """Nested loop join: outer loop scans left, inner loop scans right."""
+
+    def __init__(self, left_op, right_op, join_type, on_condition,
+                 left_name, left_alias, left_cols,
+                 right_name, right_alias, right_cols,
+                 join_keys):
+        self.left_op = left_op
+        self.right_op = right_op
+        self.join_type = join_type
+        self.on_condition = on_condition
+        self.left_name = left_name
+        self.left_alias = left_alias
+        self.left_cols = left_cols
+        self.right_name = right_name
+        self.right_alias = right_alias
+        self.right_cols = right_cols
+        self.join_keys = join_keys
+
+    def __iter__(self):
+        if self.join_type in ("RIGHT", "FULL"):
+            right_rows = list(self.right_op)
+        else:
+            right_rows = None
+
+        matched_right = set()
+
+        for left_row in self.left_op:
+            if right_rows is not None:
+                right_iter = enumerate(right_rows)
+            else:
+                right_iter = enumerate(self.right_op)
+
+            matched = False
+            for j, right_row in right_iter:
+                # Evaluate ON condition before prefixing (use raw combined row)
+                # Add right first, then left overwrites — left takes precedence
+                raw_combined = {}
+                for k, v in right_row.items():
+                    if k != '_rowid':
+                        raw_combined[k] = v
+                for k, v in left_row.items():
+                    if k != '_rowid':
+                        raw_combined[k] = v
+                if self.on_condition is not None and not _to_bool(self.on_condition.evaluate(raw_combined)):
+                    continue
+                combined = self._combine_rows(left_row, right_row)
+                matched = True
+                matched_right.add(j)
+                yield combined
+
+            if not matched and self.join_type in ("LEFT", "FULL"):
+                yield self._combine_with_nulls(left_row, None)
+
+        if self.join_type in ("RIGHT", "FULL"):
+            for j, right_row in enumerate(right_rows):
+                if j not in matched_right:
+                    yield self._combine_with_nulls(None, right_row)
+
+    def _combine_rows(self, left_row, right_row):
+        """Merge two rows, handling column name conflicts."""
+        result = {}
+        left_prefix = self.left_alias or self.left_name
+        right_prefix = self.right_alias or self.right_name
+
+        left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
+        right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
+
+        # Find conflicts
+        conflicts = set(left_cols.keys()) & set(right_cols.keys())
+
+        for k, v in left_cols.items():
+            if k in conflicts:
+                result[f'{left_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        for k, v in right_cols.items():
+            if k in conflicts:
+                result[f'{right_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        return result
+
+    def _combine_with_nulls(self, left_row, right_row):
+        """Combine a row with NULLs for the missing side (OUTER JOIN)."""
+        result = {}
+        left_prefix = self.left_alias or self.left_name
+        right_prefix = self.right_alias or self.right_name
+
+        if left_row is None:
+            left_cols = {}
+        else:
+            left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
+
+        if right_row is None:
+            right_cols = {k: None for k in self.right_cols}
+        else:
+            right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
+
+        conflicts = set(left_cols.keys()) & set(right_cols.keys())
+
+        for k, v in left_cols.items():
+            if k in conflicts:
+                result[f'{left_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        for k, v in right_cols.items():
+            if k in conflicts:
+                result[f'{right_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        return result
+
+
 class FilterOperator(Operator):
     """WHERE clause filter operator."""
 
