@@ -201,5 +201,63 @@ class CommandHandler:
         return val
 
     def _dump(self, arg: str) -> str:
-        """Dump table data — placeholder for Task 5."""
-        return "Not yet implemented (see Task 5)"
+        """Export table data to CSV (stdout) or a file."""
+        import csv
+        import json
+        import os
+
+        parts = arg.strip().split()
+        if not parts:
+            return "Usage: .dump <table> [filepath]"
+
+        table_name = parts[0]
+        filepath = parts[1] if len(parts) > 1 else None
+
+        try:
+            result = self._db.execute(f"SELECT * FROM {table_name}")
+        except Exception as e:
+            return f"Error: {e}"
+
+        if not result.rows:
+            return f"0 rows (table {table_name} is empty)"
+
+        columns = result.columns
+        rows = result.rows
+
+        # Determine format from filepath extension
+        fmt = "csv"
+        if filepath:
+            ext = os.path.splitext(filepath)[1].lower()
+            if ext == ".json":
+                fmt = "json"
+
+        if fmt == "csv":
+            output = self._format_csv(columns, rows)
+        else:
+            output = self._format_json(columns, rows)
+
+        if filepath:
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(output)
+            return f"{len(rows)} rows dumped to {filepath}"
+        else:
+            return output
+
+    def _format_csv(self, columns: list[str], rows: list[list]) -> str:
+        """Format rows as CSV string."""
+        import csv
+        import io
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(columns)
+        for row in rows:
+            writer.writerow(row)
+        return buf.getvalue().rstrip("\r\n")
+
+    def _format_json(self, columns: list[str], rows: list[list]) -> str:
+        """Format rows as JSON string."""
+        import json
+        result = []
+        for row in rows:
+            result.append(dict(zip(columns, row)))
+        return json.dumps(result, indent=2, ensure_ascii=False)

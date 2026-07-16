@@ -91,3 +91,46 @@ class TestCommandHandler:
         output = ch.handle("import", "t1 /nonexistent/file.csv")
         assert "Error" in output or "not found" in output.lower()
         db.close()
+
+    def test_dump_csv_to_stdout(self, tmp_path, capsys):
+        db = Database(str(tmp_path / "test.db"))
+        db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
+        db.execute("INSERT INTO users VALUES (1, 'Alice')")
+        db.execute("INSERT INTO users VALUES (2, 'Bob')")
+        ch = CommandHandler(db)
+        output = ch.handle("dump", "users")
+        assert "Alice" in output
+        assert "Bob" in output
+        assert "id" in output
+        db.close()
+
+    def test_dump_json_to_stdout(self, tmp_path):
+        db = Database(str(tmp_path / "test.db"))
+        db.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)")
+        db.execute("INSERT INTO items VALUES (1, 'Widget')")
+        ch = CommandHandler(db)
+        output = ch.handle("dump", "items")
+        # JSON output should contain the data
+        assert "Widget" in output
+        assert '"id"' in output or "id" in output
+        db.close()
+
+    def test_dump_to_file(self, tmp_path):
+        db = Database(str(tmp_path / "test.db"))
+        db.execute("CREATE TABLE data (id INTEGER PRIMARY KEY, val TEXT)")
+        db.execute("INSERT INTO data VALUES (1, 'test')")
+        ch = CommandHandler(db)
+        out_path = tmp_path / "output.csv"
+        output = ch.handle("dump", f"data {out_path}")
+        assert "1 rows" in output or "1 row" in output
+        assert out_path.exists()
+        content = out_path.read_text()
+        assert "test" in content
+        db.close()
+
+    def test_dump_nonexistent_table(self, tmp_path):
+        db = Database(str(tmp_path / "test.db"))
+        ch = CommandHandler(db)
+        output = ch.handle("dump", "nonexistent")
+        assert "Error" in output or "not found" in output.lower() or "no such" in output.lower()
+        db.close()
