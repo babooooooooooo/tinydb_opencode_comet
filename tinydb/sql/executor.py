@@ -75,15 +75,26 @@ class NestedLoopJoinOperator(Operator):
                     if not self._natural_keys_match(left_row, right_row):
                         continue
                 elif self.on_condition is not None:
-                    # Evaluate ON condition before prefixing (use raw combined row)
-                    # Add right first, then left overwrites — left takes precedence
+                    # Evaluate ON condition using both original and prefixed column names.
+                    # Left's original names take precedence over right's.
+                    left_prefix = self.left_alias or self.left_name
+                    right_prefix = self.right_alias or self.right_name
                     raw_combined = {}
+                    # Add right's original names first (lower precedence)
                     for k, v in right_row.items():
                         if k != '_rowid':
                             raw_combined[k] = v
+                    # Add left's original names (overwrite right's for conflicts)
                     for k, v in left_row.items():
                         if k != '_rowid':
                             raw_combined[k] = v
+                    # Add prefixed names for both sides
+                    for k, v in left_row.items():
+                        if k != '_rowid':
+                            raw_combined[f'{left_prefix}_{k}'] = v
+                    for k, v in right_row.items():
+                        if k != '_rowid':
+                            raw_combined[f'{right_prefix}_{k}'] = v
                     if not _to_bool(self.on_condition.evaluate(raw_combined)):
                         continue
                 combined = self._combine_rows(left_row, right_row)
