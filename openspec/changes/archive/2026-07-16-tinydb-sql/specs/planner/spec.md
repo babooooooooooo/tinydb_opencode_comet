@@ -17,6 +17,10 @@ The system SHALL default to full table scan when no index is available.
 ### Requirement: 处理聚合查询计划
 The system SHALL generate an Aggregate operator node for queries with aggregate functions.
 
+#### Scenario: 聚合函数生成计划
+- **WHEN** 输入 "SELECT COUNT(*) FROM users"
+- **THEN** 生成 Plan = Aggregate(COUNT(*), Scan(users))
+
 ## MODIFIED Requirements
 
 （无）

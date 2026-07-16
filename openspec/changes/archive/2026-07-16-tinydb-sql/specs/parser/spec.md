@@ -28,6 +28,10 @@ The system SHALL parse UPDATE ... SET ... WHERE ... statements.
 ### Requirement: 解析 DELETE 语句
 The system SHALL parse DELETE FROM ... WHERE ... statements.
 
+#### Scenario: 解析 DELETE
+- **WHEN** 输入 "DELETE FROM users WHERE age < 18"
+- **THEN** 返回 DeleteStatement(table=users, condition=age<18) 的 AST
+
 ### Requirement: 解析 CREATE TABLE 语句
 The system SHALL parse CREATE TABLE with column definitions and constraints (PRIMARY KEY, NOT NULL, UNIQUE).
 
@@ -37,6 +41,10 @@ The system SHALL parse CREATE TABLE with column definitions and constraints (PRI
 
 ### Requirement: 解析 DROP TABLE 语句
 The system SHALL parse DROP TABLE statements.
+
+#### Scenario: 解析 DROP TABLE
+- **WHEN** 输入 "DROP TABLE users"
+- **THEN** 返回 DropTableStatement(table=users) 的 AST
 
 ### Requirement: 解析 WHERE 复合条件
 The system SHALL handle AND, OR, NOT with correct precedence (NOT > AND > OR).

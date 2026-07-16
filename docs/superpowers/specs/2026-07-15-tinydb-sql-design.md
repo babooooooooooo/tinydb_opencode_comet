@@ -2,6 +2,8 @@
 comet_change: tinydb-sql
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-07-16-tinydb-sql
+status: final
 ---
 
 # tinydb-sql 技术设计文档
