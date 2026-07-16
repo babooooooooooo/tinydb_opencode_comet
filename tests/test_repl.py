@@ -24,14 +24,14 @@ class TestREPL:
         db = Database(str(tmp_path / "test.db"))
         repl = REPL(db)
         with pytest.raises(SystemExit):
-            repl._handle_meta(".exit")
+            repl._handle_command(".exit")
         db.close()
 
     def test_meta_tables(self, tmp_path, capsys):
         db = Database(str(tmp_path / "test.db"))
         db.execute("CREATE TABLE t1 (id INTEGER PRIMARY KEY)")
         repl = REPL(db)
-        repl._handle_meta(".tables")
+        repl._handle_command(".tables")
         captured = capsys.readouterr()
         assert "t1" in captured.out
         db.close()
@@ -41,4 +41,52 @@ class TestREPL:
         repl = REPL(db)
         assert not repl._is_complete("SELECT *")
         assert repl._is_complete("SELECT * FROM t;")
+        db.close()
+
+    def test_is_complete_with_brackets(self, tmp_path):
+        db = Database(str(tmp_path / "test.db"))
+        repl = REPL(db)
+        # Balanced brackets + semicolon = complete
+        assert repl._is_complete("SELECT * FROM t WHERE id IN (1, 2, 3);")
+        # Unbalanced brackets = not complete
+        assert not repl._is_complete("SELECT * FROM t WHERE id IN (1, 2, 3")
+        # No semicolon = not complete
+        assert not repl._is_complete("SELECT * FROM t")
+        db.close()
+
+    def test_is_complete_nested_brackets(self, tmp_path):
+        db = Database(str(tmp_path / "test.db"))
+        repl = REPL(db)
+        assert repl._is_complete("SELECT * FROM t WHERE (a = 1 AND (b = 2 OR c = 3));")
+        assert not repl._is_complete("SELECT * FROM t WHERE (a = 1 AND (b = 2 OR c = 3)")
+        db.close()
+
+    def test_repl_has_highlighter(self, tmp_path):
+        db = Database(str(tmp_path / "test.db"))
+        repl = REPL(db)
+        assert hasattr(repl, '_highlighter')
+        db.close()
+
+    def test_repl_has_completer(self, tmp_path):
+        db = Database(str(tmp_path / "test.db"))
+        repl = REPL(db)
+        assert hasattr(repl, '_completer')
+        db.close()
+
+    def test_repl_has_commands(self, tmp_path):
+        db = Database(str(tmp_path / "test.db"))
+        repl = REPL(db)
+        assert hasattr(repl, '_commands')
+        db.close()
+
+    def test_multiline_bracket_matching(self, tmp_path):
+        db = Database(str(tmp_path / "test.db"))
+        repl = REPL(db)
+        # Simulate multi-line input with brackets
+        repl._buffer.append("SELECT * FROM t")
+        repl._buffer.append("  WHERE id IN (1, 2")
+        repl._buffer.append("  , 3)")
+        sql = " ".join(repl._buffer)
+        assert repl._is_complete(sql + ";")
+        assert not repl._is_complete(sql)
         db.close()
