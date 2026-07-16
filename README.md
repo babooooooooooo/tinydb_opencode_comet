@@ -2,47 +2,71 @@
 
 一个从零构建的 Python 嵌入式关系型数据库，用于教学和学习数据库核心原理。
 
+当前版本: **v0.2.0**
+
 ## 特性
 
 - **纯 SQL 字符串接口** — `db.execute("SELECT ...")`
 - **PostgreSQL 风格 SQL 方言**
 - **DDL**: `CREATE TABLE`, `DROP TABLE`
 - **DML**: `INSERT`, `SELECT`, `UPDATE`, `DELETE`
+- **多表 JOIN**: `INNER/LEFT/RIGHT/FULL OUTER/CROSS/NATURAL/SELF JOIN`
+- **三种 JOIN 算法**: Nested Loop Join、Hash Join、Sort-Merge Join
+- **代价优化**: 基于统计信息自动选择最优 JOIN 算法
 - **条件查询**: `WHERE` (AND/OR, `IS NULL`)、`ORDER BY`、`LIMIT`、`OFFSET`
 - **列约束**: `PRIMARY KEY`, `NOT NULL`, `UNIQUE`
 - **聚合函数**: `COUNT`, `SUM`, `AVG` + `GROUP BY`
 - **B-tree 索引** 加速等值和范围查询
-- **ACID 事务**: `BEGIN`, `COMMIT`, `ROLLBACK`（Shadow Paging）
+- **ACID 事务**: `BEGIN`, `COMMIT`, `ROLLBACK`（Shadow Paging + MVCC）
+- **并发控制**: 锁 + MVCC 混合模型，多事务并发，读不阻塞写
+- **隔离级别**: `READ UNCOMMITTED`/`READ COMMITTED`/`REPEATABLE READ`/`SERIALIZABLE`
+- **死锁检测**: 等待图 + 超时检测，自动选择牺牲者
 - **单文件持久化** — 数据存储在单个 `.db` 文件
-- **CLI/REPL** 交互式界面
+- **CLI/REPL** 交互式界面，语法高亮，自动补全，执行计划可视化
 
 ## 快速开始
 
 ```bash
 python -m tinydb.cli
 tinydb> CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);
+tinydb> CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER, amount FLOAT);
 tinydb> INSERT INTO users VALUES (1, 'Alice');
-tinydb> SELECT * FROM users;
+tinydb> INSERT INTO orders VALUES (1, 1, 99.5);
+tinydb> SELECT u.name, o.amount FROM users u JOIN orders o ON u.id = o.user_id;
+tinydb> .explain SELECT * FROM users WHERE id = 1;
 tinydb> .exit
 ```
 
 ## 架构
 
 ```
-┌─────────────────────────────────────────────┐
-│                  SQL Engine                  │
-│  Lexer → Parser → Planner → Executor        │
-│  (Scan/Filter/Project/Aggregate/Sort/Limit)  │
-└──────────────────┬──────────────────────────┘
-                   │ Table API
-┌──────────────────┴──────────────────────────┐
-│               Storage Engine                 │
-│  TypeSystem → RowFormat → Page → FileManager │
-│  BufferPool (LRU + pin/unpin)               │
-│  Catalog (tinydb_master)                    │
-│  B-tree Index + IndexManager                │
-│  Transaction (Shadow Paging)                │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                      SQL Engine                          │
+│  Lexer → Parser → Planner → Executor                    │
+│  (Scan/Filter/Project/Aggregate/Sort/Limit/Join)         │
+│  JOIN Algorithms: NestedLoop / Hash / SortMerge          │
+└──────────────────────┬──────────────────────────────────┘
+                       │ Table API
+┌──────────────────────┴──────────────────────────────────┐
+│                   Storage Engine                         │
+│  TypeSystem → RowFormat → Page → FileManager            │
+│  BufferPool (LRU + pin/unpin + Page Latch)              │
+│  Catalog (tinydb_master)                                │
+│  B-tree Index + IndexManager                            │
+│  Transaction (Shadow Paging)                            │
+├─────────────────────────────────────────────────────────┤
+│                  Concurrency Layer                        │
+│  LockManager (S/X locks, compatibility matrix, timeout) │
+│  MVCCManager (version chain, snapshot, GC)              │
+│  DeadlockDetector (wait-for graph, cycle detection)     │
+│  Isolation Levels (4 levels, default REPEATABLE READ)   │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│                     CLI/REPL                             │
+│  SQLHighlighter (pygments) / SQLCompleter (readline)    │
+│  Commands: .explain / .import / .dump / .timing          │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ## 模块说明
@@ -53,18 +77,26 @@ tinydb> .exit
 | RowFormat | `tinydb/row_format.py` | NULL 位图、行序列化/反序列化 |
 | Page | `tinydb/page.py` | Slotted Page 数据结构、slot 管理 |
 | FileManager | `tinydb/file_manager.py` | 文件 I/O、空闲页分配、文件头管理 |
-| BufferPool | `tinydb/buffer_pool.py` | LRU 页缓存、pin/unpin、脏页管理 |
+| BufferPool | `tinydb/buffer_pool.py` | LRU 页缓存、pin/unpin、脏页管理、Page Latch |
 | Catalog | `tinydb/catalog.py` | 系统目录表、表元数据管理 |
 | Table | `tinydb/table.py` | 表级 CRUD API |
 | Lexer | `tinydb/sql/lexer.py` | SQL 词法分析器 |
 | Parser | `tinydb/sql/parser.py` | 递归下降语法分析器 |
-| Planner | `tinydb/sql/planner.py` | 查询计划器 |
-| Executor | `tinydb/sql/executor.py` | 火山模型执行引擎 |
+| Planner | `tinydb/sql/planner.py` | 查询计划器（含 JOIN 优化） |
+| Executor | `tinydb/sql/executor.py` | 火山模型执行引擎（含 JOIN 算子） |
 | B-tree | `tinydb/index/btree.py` | B-tree 索引结构 |
 | IndexManager | `tinydb/index/index_manager.py` | 索引管理器 + DML 钩子 |
 | Transaction | `tinydb/transaction/shadow_paging.py` | Shadow Paging 事务 |
+| TxnManager | `tinydb/transaction/txn_manager.py` | 多事务管理器 |
+| LockManager | `tinydb/concurrency/lock_manager.py` | 共享/独占锁管理 |
+| MVCCManager | `tinydb/concurrency/mvcc_manager.py` | 多版本并发控制 |
+| DeadlockDetector | `tinydb/concurrency/deadlock_detector.py` | 死锁检测与恢复 |
+| Isolation | `tinydb/concurrency/isolation.py` | 隔离级别定义 |
 | Database | `tinydb/database.py` | Database 公共入口 |
-| CLI | `tinydb/cli/repl.py` | 交互式 REPL |
+| CLI/REPL | `tinydb/cli/repl.py` | 交互式 REPL |
+| Highlighter | `tinydb/cli/highlighter.py` | SQL 语法高亮 |
+| Completer | `tinydb/cli/completer.py` | 自动补全 |
+| Commands | `tinydb/cli/commands.py` | 扩展命令 |
 
 ## 项目结构
 
@@ -92,10 +124,34 @@ tinydb/
 ├── transaction/         # 事务
 │   ├── shadow_paging.py
 │   └── txn_manager.py
-└── cli/                 # REPL
-    └── repl.py
+├── concurrency/         # 并发控制
+│   ├── __init__.py
+│   ├── lock_manager.py
+│   ├── mvcc_manager.py
+│   ├── deadlock_detector.py
+│   └── isolation.py
+└── cli/                 # REPL + 增强
+    ├── repl.py
+    ├── highlighter.py
+    ├── completer.py
+    └── commands.py
 
-tests/                   # pytest 测试套件 (311 tests)
+tests/                   # pytest 测试套件 (473 tests)
+├── concurrency/          # 并发控制测试
+│   ├── test_lock_manager.py
+│   ├── test_mvcc_manager.py
+│   ├── test_deadlock_detector.py
+│   ├── test_isolation.py
+│   └── test_exports.py
+├── sql/                  # SQL 引擎测试
+│   ├── test_join_lexer.py
+│   ├── test_join_parser.py
+│   ├── test_join_planner.py
+│   ├── test_join_executor.py
+│   ├── test_join_ast.py
+│   ├── test_join_integration.py
+│   └── ... (其他 SQL 测试)
+└── ... (其他测试)
 ```
 
 ## 技术决策
@@ -106,6 +162,10 @@ tests/                   # pytest 测试套件 (311 tests)
 | 行存储模型 | Slotted Page | 经典教学模型 (SQLite/PostgreSQL) |
 | 缓冲池策略 | OrderedDict + 双链表 LRU | 兼顾代码简洁和算法教学 |
 | 事务模型 | Shadow Paging | 实现简单、回滚自然、适合教学 |
+| 并发模型 | 锁 + MVCC 混合 | 读不阻塞写、写不阻塞读 |
+| JOIN 算法 | 三种 + 代价选择 | 覆盖不同场景的最优执行 |
+| 死锁处理 | 超时 + 等待图 | 双重保障、自动恢复 |
+| CLI 高亮 | pygments | 成熟稳定、多语言支持 |
 | 页大小 | 固定 4KB | 与 OS 内存页对齐 |
 | B-tree 叶节点 | 存行指针 (非聚簇) | 教学演示、避免数据物理重组 |
 | 目录表 | 自描述 Catalog | 数据库"认识自己" |
@@ -117,8 +177,9 @@ tests/                   # pytest 测试套件 (311 tests)
 
 **优先教学可读性**，在以下方面做了简化：
 
-- 不支持并发（单 Writer）
+- 不支持真正的多线程并行执行（并发控制在锁粒度模拟）
 - 删除后空间不立即回收（无 compaction）
+- MVCC 版本 GC 为手动触发（无后台清理线程）
 - 无 WAL（使用 Shadow Paging）
 - 目录表使用 JSON 存储列定义（灵活可读）
 - B-tree 不实现重平衡合并
@@ -130,14 +191,14 @@ tests/                   # pytest 测试套件 (311 tests)
 pytest tests/ -v
 ```
 
-覆盖：类型检查、行序列化、页操作、缓冲池 LRU、文件管理、目录 CRUD、SQL 解析、查询执行、B-tree 索引、事务 ACID、端到端集成测试。
+覆盖：类型检查、行序列化、页操作、缓冲池 LRU、文件管理、目录 CRUD、SQL 解析、JOIN 查询、查询执行、B-tree 索引、事务 ACID、并发控制、死锁检测、CLI 交互、端到端集成测试。
 
 ## 不为之事 (Out of Scope)
 
-- 多表 JOIN 查询
-- 并发控制（多线程/多进程）
 - ALTER TABLE、视图、触发器、外键
 - 网络/客户端-服务器模式
+- 真正的多进程并行查询执行
+- 分布式事务
 
 ## License
 
