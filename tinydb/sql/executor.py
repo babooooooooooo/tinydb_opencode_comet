@@ -60,6 +60,7 @@ class NestedLoopJoinOperator(Operator):
             right_rows = None
 
         matched_right = set()
+        is_natural = self._is_natural_condition()
 
         for left_row in self.left_op:
             if right_rows is not None:
@@ -69,17 +70,22 @@ class NestedLoopJoinOperator(Operator):
 
             matched = False
             for j, right_row in right_iter:
-                # Evaluate ON condition before prefixing (use raw combined row)
-                # Add right first, then left overwrites — left takes precedence
-                raw_combined = {}
-                for k, v in right_row.items():
-                    if k != '_rowid':
-                        raw_combined[k] = v
-                for k, v in left_row.items():
-                    if k != '_rowid':
-                        raw_combined[k] = v
-                if self.on_condition is not None and not _to_bool(self.on_condition.evaluate(raw_combined)):
-                    continue
+                if is_natural:
+                    # NATURAL JOIN: match on join_keys directly
+                    if not self._natural_keys_match(left_row, right_row):
+                        continue
+                elif self.on_condition is not None:
+                    # Evaluate ON condition before prefixing (use raw combined row)
+                    # Add right first, then left overwrites — left takes precedence
+                    raw_combined = {}
+                    for k, v in right_row.items():
+                        if k != '_rowid':
+                            raw_combined[k] = v
+                    for k, v in left_row.items():
+                        if k != '_rowid':
+                            raw_combined[k] = v
+                    if not _to_bool(self.on_condition.evaluate(raw_combined)):
+                        continue
                 combined = self._combine_rows(left_row, right_row)
                 matched = True
                 matched_right.add(j)
@@ -92,6 +98,31 @@ class NestedLoopJoinOperator(Operator):
             for j, right_row in enumerate(right_rows):
                 if j not in matched_right:
                     yield self._combine_with_nulls(None, right_row)
+
+    def _is_natural_condition(self):
+        """Check if this is a NATURAL JOIN condition (same column on both sides)."""
+        if self.on_condition is None or not hasattr(self.on_condition, 'op'):
+            return False
+        if self.on_condition.op != '=':
+            return False
+        if not hasattr(self.on_condition, 'left') or not hasattr(self.on_condition, 'right'):
+            return False
+        left = self.on_condition.left
+        right = self.on_condition.right
+        if hasattr(left, 'name') and hasattr(right, 'name') and left.name == right.name:
+            return True
+        return False
+
+    def _natural_keys_match(self, left_row, right_row):
+        """Check if join keys match for NATURAL JOIN."""
+        for k in self.join_keys:
+            left_val = left_row.get(k)
+            right_val = right_row.get(k)
+            if left_val is None or right_val is None:
+                return False
+            if left_val != right_val:
+                return False
+        return True
 
     def _combine_rows(self, left_row, right_row):
         """Merge two rows, handling column name conflicts."""

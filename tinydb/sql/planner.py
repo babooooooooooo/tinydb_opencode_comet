@@ -67,6 +67,10 @@ class JoinPlanner:
             )
         # Use the first common column as join key
         key = sorted(common)[0]
+        # Create an ON condition that the nested loop join can evaluate:
+        # We use the raw combined row where left columns overwrite right,
+        # so we need to compare left's key with right's key using a special approach.
+        # We pass join_keys and let the operator handle the matching.
         on_condition = BinaryOp('=', ColumnRef(key), ColumnRef(key))
         return JoinClause(
             join_type="INNER",
