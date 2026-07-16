@@ -152,6 +152,136 @@ class NestedLoopJoinOperator(Operator):
         return result
 
 
+class HashJoinOperator(Operator):
+    """Hash join: build hash table on right, probe with left. Equi-joins only."""
+
+    def __init__(self, left_op, right_op, join_type, on_condition,
+                 left_name, left_alias, left_cols,
+                 right_name, right_alias, right_cols,
+                 join_keys):
+        self.left_op = left_op
+        self.right_op = right_op
+        self.join_type = join_type
+        self.on_condition = on_condition
+        self.left_name = left_name
+        self.left_alias = left_alias
+        self.left_cols = left_cols
+        self.right_name = right_name
+        self.right_alias = right_alias
+        self.right_cols = right_cols
+        self.join_keys = join_keys
+        # Extract right-side key from ON condition if available
+        self._right_key = self._extract_right_key(on_condition)
+
+    def _extract_right_key(self, on_condition):
+        """Extract the right-side column name from an equality ON condition."""
+        if (self.on_condition is not None and
+                hasattr(self.on_condition, 'op') and self.on_condition.op == '=' and
+                hasattr(self.on_condition, 'left') and hasattr(self.on_condition, 'right')):
+            right = self.on_condition.right
+            if hasattr(right, 'name') and hasattr(right, 'table'):
+                return right.name
+        return self.join_keys[0] if self.join_keys else None
+
+    def __iter__(self):
+        # Build phase: hash right table on join key
+        hash_table = {}
+        right_rows = list(self.right_op)
+
+        for i, right_row in enumerate(right_rows):
+            key = self._extract_right_key_from_row(right_row)
+            if key not in hash_table:
+                hash_table[key] = []
+            hash_table[key].append((i, right_row))
+
+        # Probe phase
+        matched_right = set()
+
+        for left_row in self.left_op:
+            key = self._extract_left_key_from_row(left_row)
+            if key in hash_table:
+                for j, right_row in hash_table[key]:
+                    matched_right.add(j)
+                    yield self._combine_rows(left_row, right_row)
+            elif self.join_type in ("LEFT", "FULL"):
+                yield self._combine_with_nulls(left_row, None)
+
+        # Yield unmatched right rows for RIGHT/FULL
+        if self.join_type in ("RIGHT", "FULL"):
+            for j, right_row in enumerate(right_rows):
+                if j not in matched_right:
+                    yield self._combine_with_nulls(None, right_row)
+
+    def _extract_left_key_from_row(self, row):
+        """Extract join key from left row."""
+        if self.join_keys:
+            return tuple(row.get(k) for k in self.join_keys)
+        return ()
+
+    def _extract_right_key_from_row(self, row):
+        """Extract join key from right row (as tuple for hash consistency)."""
+        if self._right_key:
+            return (row.get(self._right_key),)
+        return ()
+
+    def _combine_rows(self, left_row, right_row):
+        """Merge two rows, handling column name conflicts."""
+        result = {}
+        left_prefix = self.left_alias or self.left_name
+        right_prefix = self.right_alias or self.right_name
+
+        left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
+        right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
+
+        conflicts = set(left_cols.keys()) & set(right_cols.keys())
+
+        for k, v in left_cols.items():
+            if k in conflicts:
+                result[f'{left_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        for k, v in right_cols.items():
+            if k in conflicts:
+                result[f'{right_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        return result
+
+    def _combine_with_nulls(self, left_row, right_row):
+        """Combine a row with NULLs for the missing side (OUTER JOIN)."""
+        result = {}
+        left_prefix = self.left_alias or self.left_name
+        right_prefix = self.right_alias or self.right_name
+
+        if left_row is None:
+            left_cols = {}
+        else:
+            left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
+
+        if right_row is None:
+            right_cols = {k: None for k in self.right_cols}
+        else:
+            right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
+
+        conflicts = set(left_cols.keys()) & set(right_cols.keys())
+
+        for k, v in left_cols.items():
+            if k in conflicts:
+                result[f'{left_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        for k, v in right_cols.items():
+            if k in conflicts:
+                result[f'{right_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        return result
+
+
 class FilterOperator(Operator):
     """WHERE clause filter operator."""
 

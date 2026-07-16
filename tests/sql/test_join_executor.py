@@ -104,3 +104,60 @@ class TestNestedLoopEmptyTable:
         )
         rows = list(op)
         assert len(rows) == 0
+
+
+class TestHashJoin:
+    def test_inner_join(self, catalog_and_pool):
+        from tinydb.sql.executor import HashJoinOperator
+        catalog, pool = catalog_and_pool
+        left = make_scan(catalog, pool, "users")
+        right = make_scan(catalog, pool, "orders")
+        on = BinaryOp('=', ColumnRef("id"), ColumnRef("user_id"))
+        op = HashJoinOperator(
+            left, right, "INNER", on,
+            "users", None, ["id", "name", "age"],
+            "orders", None, ["id", "user_id", "amount"],
+            ["id"]
+        )
+        rows = list(op)
+        assert len(rows) == 3
+
+    def test_left_join(self, catalog_and_pool):
+        from tinydb.sql.executor import HashJoinOperator
+        catalog, pool = catalog_and_pool
+        left = make_scan(catalog, pool, "users")
+        right = make_scan(catalog, pool, "orders")
+        on = BinaryOp('=', ColumnRef("id"), ColumnRef("user_id"))
+        op = HashJoinOperator(
+            left, right, "LEFT", on,
+            "users", None, ["id", "name", "age"],
+            "orders", None, ["id", "user_id", "amount"],
+            ["id"]
+        )
+        rows = list(op)
+        # 3 matched + 1 unmatched (Charlie) = 4
+        assert len(rows) == 4
+        charlie_rows = [r for r in rows if r.get("name") == "Charlie"]
+        assert len(charlie_rows) == 1
+        assert charlie_rows[0]["amount"] is None
+
+    def test_no_match(self, catalog_and_pool):
+        from tinydb.sql.executor import HashJoinOperator
+        catalog, pool = catalog_and_pool
+        catalog.create_table("other", [
+            ColumnDef(name="id", data_type=DataType.INTEGER),
+            ColumnDef(name="ref_id", data_type=DataType.INTEGER),
+        ], pk="id")
+        other_tbl = catalog.get_table("other")
+        other_tbl.insert(pool, [1, 999])  # no match with users
+        left = make_scan(catalog, pool, "users")
+        right = make_scan(catalog, pool, "other")
+        on = BinaryOp('=', ColumnRef("id"), ColumnRef("ref_id"))
+        op = HashJoinOperator(
+            left, right, "INNER", on,
+            "users", None, ["id", "name", "age"],
+            "other", None, ["id", "ref_id"],
+            ["id"]
+        )
+        rows = list(op)
+        assert len(rows) == 0
