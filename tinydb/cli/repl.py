@@ -103,6 +103,7 @@ class REPL:
         print("  .import <table> <file>  Import data from CSV/JSON")
         print("  .dump <table> [file]   Export table data to CSV/JSON")
         print("  .timing on|off     Toggle query timing display")
+        print("  .highlight on|off  Toggle SQL syntax highlighting")
         print("  .help              Show this help message")
 
     def _is_complete(self, sql: str = None) -> bool:
@@ -145,6 +146,10 @@ class REPL:
         """Execute the SQL accumulated in the buffer."""
         sql = " ".join(self._buffer)
         self._buffer.clear()
+
+        # Echo the SQL with syntax highlighting
+        if self._commands._highlight_enabled:
+            print(self._highlighter.highlight(sql))
 
         # Refresh schema cache after DDL
         upper = sql.strip().upper()

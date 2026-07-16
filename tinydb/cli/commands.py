@@ -8,6 +8,7 @@ class CommandHandler:
     def __init__(self, db):
         self._db = db
         self._timing_enabled = False
+        self._highlight_enabled = True
 
     def handle(self, cmd: str, arg: str) -> str | None:
         """Dispatch a dot-command. Returns output string or None if unknown."""
@@ -16,6 +17,8 @@ class CommandHandler:
                 return self._explain(arg)
             case "timing":
                 return self._timing(arg)
+            case "highlight":
+                return self._highlight(arg)
             case "import":
                 return self._import(arg)
             case "dump":
@@ -102,6 +105,19 @@ class CommandHandler:
         else:
             state = "on" if self._timing_enabled else "off"
             return f"Timing is {state}. Usage: .timing on|off"
+
+    def _highlight(self, arg: str) -> str:
+        """Toggle SQL syntax highlighting."""
+        arg = arg.strip().lower()
+        if arg == "on":
+            self._highlight_enabled = True
+            return "Highlighting enabled."
+        elif arg == "off":
+            self._highlight_enabled = False
+            return "Highlighting disabled."
+        else:
+            state = "on" if self._highlight_enabled else "off"
+            return f"Highlighting is {state}. Usage: .highlight on|off"
 
     def _import(self, arg: str) -> str:
         """Import data from a CSV or JSON file into a table."""
