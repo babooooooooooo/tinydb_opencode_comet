@@ -27,7 +27,17 @@
 ## 快速开始
 
 ```bash
-python -m tinydb.cli
+# 安装后直接使用 tinydb 命令
+tinydb
+
+# 或指定数据库文件路径
+tinydb mydata.db
+
+# 也可以使用 python 模块方式
+python3 -m tinydb.cli mydata.db
+```
+
+```
 tinydb> CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);
 tinydb> CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER, amount FLOAT);
 tinydb> INSERT INTO users VALUES (1, 'Alice');
@@ -94,6 +104,7 @@ tinydb> .exit
 | Isolation | `tinydb/concurrency/isolation.py` | 隔离级别定义 |
 | Database | `tinydb/database.py` | Database 公共入口 |
 | CLI/REPL | `tinydb/cli/repl.py` | 交互式 REPL |
+| CLI 入口 | `tinydb/cli/__main__.py` | `tinydb` 命令入口 |
 | Highlighter | `tinydb/cli/highlighter.py` | SQL 语法高亮 |
 | Completer | `tinydb/cli/completer.py` | 自动补全 |
 | Commands | `tinydb/cli/commands.py` | 扩展命令 |
@@ -131,6 +142,7 @@ tinydb/
 │   ├── deadlock_detector.py
 │   └── isolation.py
 └── cli/                 # REPL + 增强
+    ├── __main__.py
     ├── repl.py
     ├── highlighter.py
     ├── completer.py

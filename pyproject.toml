@@ -11,6 +11,9 @@ dependencies = [
     "pygments>=2.10",
 ]
 
+[project.scripts]
+tinydb = "tinydb.cli.__main__:main"
+
 [tool.setuptools.packages.find]
 include = ["tinydb*"]
 
