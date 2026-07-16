@@ -17,7 +17,7 @@ def tmp_db_path():
 
 @pytest.fixture
 def catalog_and_pool(tmp_db_path):
-    """Provide a Catalog with a pre-built 'users' table containing 3 rows."""
+    """Provide a Catalog with pre-built 'users' and 'orders' tables."""
     db_path = str(tmp_db_path)
     fm = FileManager(db_path)
     fm.open()
@@ -35,6 +35,17 @@ def catalog_and_pool(tmp_db_path):
     tbl.insert(pool, [1, "Alice", 30])
     tbl.insert(pool, [2, "Bob", 25])
     tbl.insert(pool, [3, "Charlie", 35])
+
+    cat.create_table("orders", [
+        ColumnDef(name="id", data_type=DataType.INTEGER, nullable=False),
+        ColumnDef(name="user_id", data_type=DataType.INTEGER),
+        ColumnDef(name="amount", data_type=DataType.INTEGER),
+    ], pk="id")
+
+    orders_tbl = cat.get_table("orders")
+    orders_tbl.insert(pool, [1, 1, 100])
+    orders_tbl.insert(pool, [2, 1, 200])
+    orders_tbl.insert(pool, [3, 2, 150])
 
     yield cat, pool
     fm.close()

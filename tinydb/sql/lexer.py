@@ -41,6 +41,19 @@ class TokenType(Enum):
     GROUP = "GROUP"
     AS = "AS"
 
+    # JOIN keywords
+    JOIN = "JOIN"
+    INNER = "INNER"
+    LEFT = "LEFT"
+    RIGHT = "RIGHT"
+    FULL = "FULL"
+    OUTER = "OUTER"
+    CROSS = "CROSS"
+    NATURAL = "NATURAL"
+    ON = "ON"
+    USING = "USING"
+    DOT = "DOT"
+
     # Literals
     INT_LIT = "INT_LIT"
     FLOAT_LIT = "FLOAT_LIT"
@@ -93,6 +106,16 @@ _KEYWORDS: dict = {
     "DESC": TokenType.DESC,
     "GROUP": TokenType.GROUP,
     "AS": TokenType.AS,
+    "JOIN": TokenType.JOIN,
+    "INNER": TokenType.INNER,
+    "LEFT": TokenType.LEFT,
+    "RIGHT": TokenType.RIGHT,
+    "FULL": TokenType.FULL,
+    "OUTER": TokenType.OUTER,
+    "CROSS": TokenType.CROSS,
+    "NATURAL": TokenType.NATURAL,
+    "ON": TokenType.ON,
+    "USING": TokenType.USING,
     "TRUE": TokenType.BOOL_LIT,
     "FALSE": TokenType.BOOL_LIT,
 }
@@ -148,6 +171,8 @@ class Lexer:
                 tokens.append(self._scan_lt())
             elif ch == '>':
                 tokens.append(self._scan_gt())
+            elif ch == '.':
+                tokens.append(self._make_token(TokenType.DOT, '.'))
             elif ch == "'":
                 tokens.append(self._scan_string())
             elif ch.isdigit():

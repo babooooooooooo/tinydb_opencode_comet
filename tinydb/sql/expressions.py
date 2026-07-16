@@ -24,8 +24,13 @@ class Literal(Expression):
 class ColumnRef(Expression):
     """Column reference expression."""
     name: str
+    table: str | None = None  # table alias qualifier (e.g., u.name → table="u")
 
     def evaluate(self, row: dict) -> object:
+        if self.table:
+            prefixed = f'{self.table}_{self.name}'
+            if prefixed in row:
+                return row.get(prefixed)
         return row.get(self.name)
 
 
