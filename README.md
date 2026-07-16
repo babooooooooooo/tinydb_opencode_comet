@@ -12,17 +12,17 @@
 - **DML**: `INSERT`, `SELECT`, `UPDATE`, `DELETE`
 - **多表 JOIN**: `INNER/LEFT/RIGHT/FULL OUTER/CROSS/NATURAL/SELF JOIN`
 - **三种 JOIN 算法**: Nested Loop Join、Hash Join、Sort-Merge Join
-- **代价优化**: 基于统计信息自动选择最优 JOIN 算法
+- **代价优化**: 基于行数统计自动选择 JOIN 算法（小表 Nested Loop，大表 Hash Join）
 - **条件查询**: `WHERE` (AND/OR, `IS NULL`)、`ORDER BY`、`LIMIT`、`OFFSET`
 - **列约束**: `PRIMARY KEY`, `NOT NULL`, `UNIQUE`
 - **聚合函数**: `COUNT`, `SUM`, `AVG` + `GROUP BY`
 - **B-tree 索引** 加速等值和范围查询
 - **ACID 事务**: `BEGIN`, `COMMIT`, `ROLLBACK`（Shadow Paging + MVCC）
-- **并发控制**: 锁 + MVCC 混合模型，多事务并发，读不阻塞写
+- **并发控制**: 锁 + Shadow Paging 混合模型，Database→Table→BufferPool 全链路集成，多线程安全
 - **隔离级别**: `READ UNCOMMITTED`/`READ COMMITTED`/`REPEATABLE READ`/`SERIALIZABLE`
 - **死锁检测**: 等待图 + 超时检测，自动选择牺牲者
 - **单文件持久化** — 数据存储在单个 `.db` 文件
-- **CLI/REPL** 交互式界面，语法高亮，自动补全，执行计划可视化
+- **CLI/REPL** 交互式界面，语法高亮，自动补全，执行计划可视化，历史持久化
 
 ## 快速开始
 
@@ -75,7 +75,9 @@ tinydb> .exit
 ┌─────────────────────────────────────────────────────────┐
 │                     CLI/REPL                             │
 │  SQLHighlighter (pygments) / SQLCompleter (readline)    │
-│  Commands: .explain / .import / .dump / .timing          │
+│  Commands: .explain / .import / .dump / .timing /       │
+│            .highlight                                    │
+│  历史持久化 (~/.tinydb_history)                          │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -189,7 +191,7 @@ tests/                   # pytest 测试套件 (473 tests)
 
 **优先教学可读性**，在以下方面做了简化：
 
-- 不支持真正的多线程并行执行（并发控制在锁粒度模拟）
+- 并发控制在页粒度实现（S/X 锁），多线程读写安全
 - 删除后空间不立即回收（无 compaction）
 - MVCC 版本 GC 为手动触发（无后台清理线程）
 - 无 WAL（使用 Shadow Paging）
