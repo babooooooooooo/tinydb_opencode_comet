@@ -148,6 +148,7 @@ class Planner:
     def __init__(self, catalog, buffer_pool):
         self.catalog = catalog
         self.buffer_pool = buffer_pool
+        self._join_planner = JoinPlanner(catalog, buffer_pool)
 
     def plan(self, stmt) -> Operator:
         if isinstance(stmt, SelectStatement):
@@ -162,8 +163,11 @@ class Planner:
             raise PlanningError(f"Unknown statement type: {type(stmt)}")
 
     def _plan_select(self, stmt: SelectStatement) -> Operator:
-        table = self.catalog.get_table(stmt.table)
-        op: Operator = ScanOperator(table, self.buffer_pool)
+        if stmt.joins:
+            op = self._join_planner.plan_joins(stmt.from_table, stmt.joins, stmt.where)
+        else:
+            table = self.catalog.get_table(stmt.from_table.name)
+            op = ScanOperator(table, self.buffer_pool)
 
         if stmt.where:
             op = FilterOperator(op, stmt.where)

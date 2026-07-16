@@ -3,7 +3,7 @@
 import pytest
 from tinydb.sql.planner import JoinPlanner
 from tinydb.sql.executor import (
-    ScanOperator, NestedLoopJoinOperator,
+    ScanOperator, NestedLoopJoinOperator, FilterOperator, ProjectOperator,
 )
 from tinydb.sql.ast import TableRef, JoinClause
 from tinydb.sql.expressions import ColumnRef, BinaryOp
@@ -93,3 +93,34 @@ class TestPlannerIntegration:
         ))
         op = planner.plan_joins(stmt.from_table, stmt.joins, stmt.where)
         assert isinstance(op, NestedLoopJoinOperator)
+
+
+class TestPlannerSelectIntegration:
+    def test_plan_select_with_join(self, catalog_and_pool):
+        from tinydb.sql.planner import Planner
+        from tinydb.sql.parser import Parser
+        from tinydb.sql.lexer import Lexer
+        from tinydb.sql.executor import FilterOperator, ProjectOperator
+        catalog, pool = catalog_and_pool
+        planner = Planner(catalog, pool)
+        stmt = Parser().parse(Lexer().tokenize(
+            "SELECT u.id, o.amount FROM users u JOIN orders o ON u.id = o.user_id WHERE o.amount > 100"
+        ))
+        op = planner.plan(stmt)
+        # Should be Project → Filter → Join
+        assert isinstance(op, ProjectOperator)
+        assert isinstance(op.source, FilterOperator)
+        assert isinstance(op.source.source, NestedLoopJoinOperator)
+
+    def test_plan_select_without_join_unchanged(self, catalog_and_pool):
+        from tinydb.sql.planner import Planner
+        from tinydb.sql.parser import Parser
+        from tinydb.sql.lexer import Lexer
+        catalog, pool = catalog_and_pool
+        planner = Planner(catalog, pool)
+        stmt = Parser().parse(Lexer().tokenize("SELECT id FROM users WHERE id = 1"))
+        op = planner.plan(stmt)
+        # Should be Project → Filter → Scan (unchanged behavior)
+        assert isinstance(op, ProjectOperator)
+        assert isinstance(op.source, FilterOperator)
+        assert isinstance(op.source.source, ScanOperator)
