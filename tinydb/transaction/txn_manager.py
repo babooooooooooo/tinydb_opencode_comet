@@ -138,3 +138,30 @@ class TransactionManager:
             return next(iter(self._active_txns.values()))
         raise TransactionError("No active transaction" if not self._active_txns
                                else "Multiple active txns — specify txn_id")
+
+    def get_active_context(self) -> "ExecutionContext | None":
+        """Return execution context for the single active transaction, or None."""
+        if len(self._active_txns) == 1:
+            entry = next(iter(self._active_txns.values()))
+            return ExecutionContext(
+                txn_id=entry.txn.txn_id,
+                isolation=entry.isolation,
+                snapshot=entry.snapshot,
+                lock_mgr=self._lock_mgr,
+                mvcc=self._mvcc,
+            )
+        return None
+
+    def release_read_locks(self, txn_id: int) -> None:
+        """Release all shared locks held by a transaction (for snapshot reads)."""
+        self._lock_mgr.release_all(txn_id)
+
+
+@dataclass
+class ExecutionContext:
+    """Runtime context for SQL execution within a transaction."""
+    txn_id: int
+    isolation: IsolationLevel
+    snapshot: Snapshot
+    lock_mgr: LockManager
+    mvcc: MVCCManager

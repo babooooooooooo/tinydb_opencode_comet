@@ -25,12 +25,21 @@ class ShadowBufferPool:
         self._fm = file_manager
         self._mvcc = mvcc_manager
 
-    def get_page(self, page_id: int) -> bytes:
-        """Read page, returning shadow version if it exists."""
+    def get_page(self, page_id: int, txn_id: int | None = None, snapshot=None) -> bytes:
+        """Read page, returning shadow version if it exists, else MVCC snapshot."""
         shadow_id = self._txn.shadow_pages.get(page_id)
         if shadow_id is not None:
             return self._pool.get_page(shadow_id)
-        return self._pool.get_page(page_id)
+        return self._pool.get_page(page_id, txn_id=txn_id, snapshot=snapshot)
+
+    def pin(self, page_id: int, txn_id: int | None = None, mode=None) -> None:
+        """Pin page (acquires lock on original page ID)."""
+        # We pin the original page ID to lock it, even if a shadow exists
+        self._pool.pin(page_id, txn_id=txn_id, mode=mode)
+
+    def unpin(self, page_id: int, txn_id: int | None = None) -> None:
+        """Unpin page (releases lock on original page ID)."""
+        self._pool.unpin(page_id, txn_id=txn_id)
 
     def set_page_data(self, page_id: int, data: bytes) -> None:
         """Write page data, creating shadow page on first write (CoW)."""

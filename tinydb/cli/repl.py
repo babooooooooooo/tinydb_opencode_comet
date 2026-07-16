@@ -1,10 +1,43 @@
 # tinydb/cli/repl.py
 """Interactive REPL for tinydb with syntax highlighting, completion, and dot-commands."""
+import atexit
+import os
 import readline
 import time
 from tinydb.cli.highlighter import SQLHighlighter
 from tinydb.cli.completer import SQLCompleter
 from tinydb.cli.commands import CommandHandler
+
+_HISTORY_PATH = os.path.expanduser("~/.tinydb_history")
+
+
+def _print_columns(headers: list[str], rows: list) -> None:
+    """Print a simple one-column result."""
+    if not rows:
+        return
+    width = max(len(headers[0]), max(len(str(r)) for r in rows))
+    sep = "+" + "-" * (width + 2) + "+"
+    print(sep)
+    print(f"| {headers[0].ljust(width)} |")
+    print(sep)
+    for r in rows:
+        print(f"| {str(r).ljust(width)} |")
+    print(sep)
+    print(f"{len(rows)} rows in set")
+
+
+def _print_schema(names: list[str], types: list[str], flags: list[str]) -> None:
+    """Print table schema with columns, types, and constraints."""
+    w_name = max(len("Column"), max(len(n) for n in names))
+    w_type = max(len("Type"), max(len(t) for t in types))
+    w_flag = max(len("Constraints"), max(len(f) for f in flags))
+    sep = f"+-{ '-' * w_name }-+-{ '-' * w_type }-+-{ '-' * w_flag }-+"
+    print(sep)
+    print(f"| {'Column'.ljust(w_name)} | {'Type'.ljust(w_type)} | {'Constraints'.ljust(w_flag)} |")
+    print(sep)
+    for n, t, f in zip(names, types, flags):
+        print(f"| {n.ljust(w_name)} | {t.ljust(w_type)} | {f.ljust(w_flag)} |")
+    print(sep)
 
 
 class REPL:
@@ -37,6 +70,11 @@ class REPL:
 
             self._buffer.append(line)
             if self._is_complete():
+                full_sql = " ".join(self._buffer)
+                try:
+                    readline.add_history(full_sql.strip())
+                except Exception:
+                    pass
                 self._execute_buffer()
 
     def _setup_readline(self):
@@ -44,8 +82,20 @@ class REPL:
         readline.set_history_length(1000)
         readline.set_completer(self._readline_complete)
         readline.parse_and_bind("tab: complete")
-        # Enable emacs keybindings (default on most systems)
         readline.parse_and_bind("set editing-mode emacs")
+        # Load persistent history
+        try:
+            readline.read_history_file(_HISTORY_PATH)
+        except FileNotFoundError:
+            pass
+        atexit.register(self._save_history)
+
+    def _save_history(self):
+        """Write history to disk on exit."""
+        try:
+            readline.write_history_file(_HISTORY_PATH)
+        except OSError:
+            pass
 
     def _readline_complete(self, text: str, state: int) -> str | None:
         """Bridge readline completion to SQLCompleter."""
@@ -71,15 +121,28 @@ class REPL:
                 raise SystemExit
             case ".tables":
                 result = self._db.execute("SHOW TABLES")
-                for row in result.rows:
-                    print(row[0])
+                tables = [row[0] for row in result.rows]
+                if not tables:
+                    print("(no tables)")
+                else:
+                    _print_columns(["table_name"], tables)
                 return
             case ".schema":
                 if not arg:
                     print("Usage: .schema <table>")
                 else:
-                    result = self._db.execute(f"SELECT * FROM {arg} LIMIT 0")
-                    print(" | ".join(result.columns))
+                    info = self._db.get_table_info(arg)
+                    if not info:
+                        print(f"Table '{arg}' not found")
+                    else:
+                        names = [c["name"] for c in info]
+                        types = [c["type"] for c in info]
+                        flags = [
+                            ("PK" if c["primary_key"] else "")
+                            + ("" if c["nullable"] else " NOT NULL")
+                            for c in info
+                        ]
+                        _print_schema(names, types, flags)
                 return
             case ".help":
                 self._print_help()

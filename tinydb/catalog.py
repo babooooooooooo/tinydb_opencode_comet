@@ -38,6 +38,7 @@ class TableMeta:
     columns: list[ColumnDef]
     root_page: int
     primary_key: str
+    row_count: int = 0
 
 
 class Catalog:
@@ -101,6 +102,18 @@ class Catalog:
     def list_tables(self) -> list[str]:
         """List all registered table names."""
         return list(self._tables.keys())
+
+    def estimate_rows(self, table_name: str, buffer_pool) -> int:
+        """Estimate row count by scanning the table. Used by JOIN cost model."""
+        if table_name not in self._tables:
+            return 0
+        meta = self._tables[table_name]
+        from tinydb.table import Table
+        tbl = Table(meta.table_name, meta.columns, meta.root_page, meta.primary_key)
+        count = 0
+        for _ in tbl.scan(buffer_pool):
+            count += 1
+        return count
 
     # --- Internal methods ---
 

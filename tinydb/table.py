@@ -15,6 +15,7 @@ from tinydb.page import (
     insert_row_into_page, get_row_from_page, delete_row_from_page,
     get_free_space, parse_page_header, pack_page_header,
 )
+from tinydb.concurrency.lock_manager import LockMode
 
 
 class Table:
@@ -26,7 +27,7 @@ class Table:
         self.root_page = root_page
         self.primary_key = primary_key
 
-    def insert(self, buffer_pool, row: list) -> RowId:
+    def insert(self, buffer_pool, row: list, ctx=None) -> RowId:
         """Insert a row. Returns the RowId."""
         # Validate and convert values
         converted = []
@@ -34,6 +35,10 @@ class Table:
             converted.append(convert_value(val, col))
 
         serialized = serialize_row(converted, self.columns)
+
+        # Acquire exclusive lock on root page to serialize writes
+        if ctx is not None:
+            self._acquire_lock(ctx, self.root_page, LockMode.EXCLUSIVE)
 
         # Traverse page chain to find space
         page_id = self.root_page
@@ -86,16 +91,20 @@ class Table:
 
         return RowId(page_id=data_page_id, slot_index=slot_idx)
 
-    def scan(self, buffer_pool):
+    def scan(self, buffer_pool, ctx=None):
         """Yield (RowId, row_values) tuples for all rows in the table."""
         page_id = self.root_page
 
         while page_id != 0:
-            buffer_pool.pin(page_id)
-            page_data = buffer_pool.get_page(page_id)
+            txn_id = ctx.txn_id if ctx else None
+            mode = LockMode.SHARED if ctx else None
+            snapshot = ctx.snapshot if ctx else None
+
+            buffer_pool.pin(page_id, txn_id=txn_id, mode=mode)
+            page_data = buffer_pool.get_page(page_id, txn_id=txn_id, snapshot=snapshot)
             header = parse_page_header(page_data)
             if header["page_type"] != PageType.DATA:
-                buffer_pool.unpin(page_id)
+                buffer_pool.unpin(page_id, txn_id=txn_id)
                 break
 
             # Read all valid rows from this page
@@ -108,7 +117,7 @@ class Table:
                 if values is not None:
                     yield RowId(page_id=page_id, slot_index=slot_idx), values
 
-            buffer_pool.unpin(page_id)
+            buffer_pool.unpin(page_id, txn_id=txn_id)
             page_id = header["next_page_id"]
 
     def get(self, buffer_pool, row_id: RowId) -> list | None:
@@ -120,8 +129,11 @@ class Table:
             return None
         return deserialize_row(row_data, self.columns)
 
-    def delete(self, buffer_pool, row_id: RowId) -> None:
+    def delete(self, buffer_pool, row_id: RowId, ctx=None) -> None:
         """Delete a row by RowId."""
+        if ctx is not None:
+            self._acquire_lock(ctx, row_id.page_id, LockMode.EXCLUSIVE)
+
         page_data = bytearray(buffer_pool.get_page(row_id.page_id))
         page = _page_from_data(row_id.page_id, page_data)
         delete_row_from_page(page, row_id.slot_index)
@@ -129,8 +141,11 @@ class Table:
         # Mark dirty
         buffer_pool.set_page_data(row_id.page_id, page.data)
 
-    def update(self, buffer_pool, row_id: RowId, new_row: list) -> RowId:
+    def update(self, buffer_pool, row_id: RowId, new_row: list, ctx=None) -> RowId:
         """更新行。空间足够时原地更新并保留原 RowId，否则删除旧行后重新插入并返回新 RowId。"""
+        if ctx is not None:
+            self._acquire_lock(ctx, row_id.page_id, LockMode.EXCLUSIVE)
+
         # Validate and convert
         converted = []
         for val, col in zip(new_row, self.columns):
@@ -180,7 +195,15 @@ class Table:
             struct.pack_into("<HH", page_data, slot_off, 0, 0)
             buffer_pool.set_page_data(row_id.page_id, bytes(page_data))
             # Re-insert using insert logic
-            return self.insert(buffer_pool, new_row)
+            return self.insert(buffer_pool, new_row, ctx=ctx)
+
+    @staticmethod
+    def _acquire_lock(ctx, page_id: int, mode) -> None:
+        """Acquire a lock via the lock manager, raising on timeout."""
+        acquired = ctx.lock_mgr.acquire(ctx.txn_id, page_id, mode)
+        if not acquired:
+            from tinydb.transaction.txn_manager import TransactionError
+            raise TransactionError(f"Lock timeout: txn {ctx.txn_id} waiting for page {page_id}")
 
 
 def _page_from_data(page_id: int, data: bytes):

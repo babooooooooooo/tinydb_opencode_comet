@@ -37,10 +37,28 @@ class Database:
         self._txn_mgr = TransactionManager(self._fm, self._pool, self._index_mgr)
         self._planner = Planner(self._catalog, self._pool)
 
+    def get_table_info(self, table_name: str) -> list[dict]:
+        """Return column info for a table: [{name, type, nullable, primary_key}]."""
+        try:
+            tbl = self._catalog.get_table(table_name)
+        except Exception:
+            return []
+        return [
+            {
+                "name": c.name,
+                "type": c.data_type.value,
+                "nullable": c.nullable,
+                "primary_key": c.primary_key,
+            }
+            for c in tbl.columns
+        ]
+
     def execute(self, sql: str) -> QueryResult:
         """Execute SQL and return result."""
         sql = sql.strip().rstrip(";").strip()
         upper = sql.upper()
+
+        ctx = self._txn_mgr.get_active_context()
 
         try:
             if upper.startswith("CREATE TABLE"):
@@ -48,13 +66,15 @@ class Database:
             elif upper.startswith("DROP TABLE"):
                 return self._exec_drop_table(sql)
             elif upper.startswith("INSERT INTO"):
-                return self._exec_insert(sql)
+                return self._exec_insert(sql, ctx)
             elif upper.startswith("SELECT"):
-                return self._exec_select(sql)
+                if self._is_complex_select(upper):
+                    return self._exec_sql_select(sql)
+                return self._exec_select(sql, ctx)
             elif upper.startswith("UPDATE"):
-                return self._exec_update(sql)
+                return self._exec_update(sql, ctx)
             elif upper.startswith("DELETE FROM"):
-                return self._exec_delete(sql)
+                return self._exec_delete(sql, ctx)
             elif upper.startswith("CREATE INDEX"):
                 return self._exec_create_index(sql)
             elif upper.startswith("BEGIN"):
@@ -76,12 +96,50 @@ class Database:
                 self._txn_mgr.rollback()
             raise DatabaseError(str(e))
 
+    def _is_complex_select(self, upper: str) -> bool:
+        """Check if a SELECT statement needs the full SQL engine (JOINs, GROUP BY, aggregates)."""
+        return (
+            " JOIN " in upper
+            or " GROUP BY " in upper
+            or " COUNT(" in upper
+            or " SUM(" in upper
+            or " AVG(" in upper
+            or " MIN(" in upper
+            or " MAX(" in upper
+        )
+
+    def _exec_sql_select(self, sql: str) -> QueryResult:
+        """Execute SELECT via the full SQL engine (supports JOINs, GROUP BY, aggregates)."""
+        from tinydb.sql.lexer import Lexer
+        from tinydb.sql.parser import Parser
+        tokens = Lexer().tokenize(sql)
+        stmt = Parser().parse(tokens)
+        if stmt is None:
+            raise DatabaseError("Failed to parse SQL")
+        plan = self._planner.plan(stmt)
+        pool = self._get_pool()
+        operator = plan
+        rows = list(operator)
+
+        if rows and isinstance(rows[0], dict):
+            col_names = [k for k in rows[0].keys() if k != "_rowid"]
+            data_rows = [[r.get(c) for c in col_names] for r in rows]
+        else:
+            col_names = []
+            data_rows = rows
+
+        return QueryResult(
+            columns=col_names,
+            rows=data_rows,
+            row_count=len(data_rows),
+        )
+
     def _get_pool(self):
         """Return active pool: shadow pool if in transaction, else main pool."""
         if self._txn_mgr.has_active_txn():
             from tinydb.transaction.shadow_paging import ShadowBufferPool
             entry = next(iter(self._txn_mgr.get_active_txns().values()))
-            return ShadowBufferPool(self._pool, entry.txn, self._fm)
+            return ShadowBufferPool(self._pool, entry.txn, self._fm, mvcc_manager=self._txn_mgr._mvcc)
         return self._pool
 
     def commit(self):
@@ -134,7 +192,7 @@ class Database:
         self._catalog.save()
         return QueryResult(columns=[], rows=[], row_count=0)
 
-    def _exec_insert(self, sql: str) -> QueryResult:
+    def _exec_insert(self, sql: str, ctx=None) -> QueryResult:
         m = re.match(r"INSERT INTO (\w+)\s+VALUES\s*\((.+)\)", sql, re.IGNORECASE)
         if not m:
             raise DatabaseError(f"Invalid INSERT: {sql}")
@@ -146,11 +204,11 @@ class Database:
         converted = [convert_value(v, col) for v, col in zip(values, tbl.columns)]
 
         pool = self._get_pool()
-        rid = tbl.insert(pool, converted)
+        rid = tbl.insert(pool, converted, ctx=ctx)
         self._index_mgr.after_insert(table_name, rid, converted)
         return QueryResult(columns=[], rows=[], row_count=1)
 
-    def _exec_select(self, sql: str) -> QueryResult:
+    def _exec_select(self, sql: str, ctx=None) -> QueryResult:
         m = re.match(r"SELECT\s+(.+?)\s+FROM\s+(\w+)\s+WHERE\s+(.+)", sql, re.IGNORECASE)
         if m:
             cols_str = m.group(1).strip()
@@ -174,7 +232,7 @@ class Database:
 
         pool = self._get_pool()
         rows = []
-        for row_ptr, row in tbl.scan(pool):
+        for row_ptr, row in tbl.scan(pool, ctx=ctx):
             if where_str and not self._eval_where(row, tbl.columns, where_str):
                 continue
             selected = [row[columns.index(c)] for c in selected_cols]
@@ -182,7 +240,7 @@ class Database:
 
         return QueryResult(columns=selected_cols, rows=rows, row_count=len(rows))
 
-    def _exec_update(self, sql: str) -> QueryResult:
+    def _exec_update(self, sql: str, ctx=None) -> QueryResult:
         m = re.match(r"UPDATE\s+(\w+)\s+SET\s+(.+?)\s+WHERE\s+(.+)", sql, re.IGNORECASE)
         if not m:
             m = re.match(r"UPDATE\s+(\w+)\s+SET\s+(.+)", sql, re.IGNORECASE)
@@ -197,19 +255,19 @@ class Database:
 
         pool = self._get_pool()
         count = 0
-        for row_ptr, row in tbl.scan(pool):
+        for row_ptr, row in tbl.scan(pool, ctx=ctx):
             if where_str and not self._eval_where(row, tbl.columns, where_str):
                 continue
             new_row = list(row)
             for col_idx, val in set_clause.items():
                 new_row[col_idx] = val
-            tbl.update(pool, row_ptr, new_row)
+            tbl.update(pool, row_ptr, new_row, ctx=ctx)
             self._index_mgr.after_update(table_name, row_ptr, row, new_row)
             count += 1
 
         return QueryResult(columns=[], rows=[], row_count=count)
 
-    def _exec_delete(self, sql: str) -> QueryResult:
+    def _exec_delete(self, sql: str, ctx=None) -> QueryResult:
         m = re.match(r"DELETE FROM\s+(\w+)\s+WHERE\s+(.+)", sql, re.IGNORECASE)
         if not m:
             m = re.match(r"DELETE FROM\s+(\w+)", sql, re.IGNORECASE)
@@ -221,7 +279,7 @@ class Database:
         tbl = self._catalog.get_table(table_name)
         pool = self._get_pool()
         to_delete = []
-        for row_ptr, row in tbl.scan(pool):
+        for row_ptr, row in tbl.scan(pool, ctx=ctx):
             if where_str and not self._eval_where(row, tbl.columns, where_str):
                 continue
             to_delete.append((row_ptr, row))
@@ -229,7 +287,7 @@ class Database:
         count = 0
         for row_ptr, row in to_delete:
             self._index_mgr.after_delete(table_name, row_ptr, row)
-            tbl.delete(pool, row_ptr)
+            tbl.delete(pool, row_ptr, ctx=ctx)
             count += 1
 
         return QueryResult(columns=[], rows=[], row_count=count)

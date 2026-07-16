@@ -108,15 +108,24 @@ class JoinPlanner:
         return []
 
     def _choose_algorithm(self, join, left_info, right_info, join_keys):
-        """Choose join algorithm based on heuristics."""
+        """Choose join algorithm based on cost estimation."""
         if join.join_type == "CROSS":
             return "nested_loop"
         if not join_keys:
             return "nested_loop"
-        # For small tables, use nested_loop
-        # For larger tables, could use hash or sort_merge
-        # Simple heuristic: always nested_loop for now (can be extended)
-        return "nested_loop"
+
+        # Estimate row counts for cost-based selection
+        left_rows = self.catalog.estimate_rows(left_info.table_name, self.buffer_pool)
+        right_rows = self.catalog.estimate_rows(right_info.table_name, self.buffer_pool)
+
+        # Cost model:
+        #   Nested loop: O(M * N) — good for small tables
+        #   Hash join:   O(M + N) — good for large equi-joins
+        #   Sort-merge:  O(M log M + N log N + M + N) — good when data is sorted or for range joins
+        if left_rows < 50 and right_rows < 50:
+            return "nested_loop"
+        # Larger tables: hash join is most efficient for equi-joins
+        return "hash"
 
     def _build_join_operator(self, algorithm, left_info, right_info, join, join_keys):
         """Construct the appropriate JoinOperator."""
