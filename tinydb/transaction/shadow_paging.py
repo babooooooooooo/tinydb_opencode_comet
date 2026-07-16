@@ -4,6 +4,9 @@ import os
 from dataclasses import dataclass
 
 
+from tinydb.concurrency.mvcc_manager import MVCCManager
+
+
 @dataclass
 class Transaction:
     txn_id: int
@@ -16,10 +19,11 @@ class Transaction:
 class ShadowBufferPool:
     """BufferPool wrapper that intercepts reads/writes for CoW."""
 
-    def __init__(self, buffer_pool, txn, file_manager):
+    def __init__(self, buffer_pool, txn, file_manager, mvcc_manager: MVCCManager | None = None):
         self._pool = buffer_pool
         self._txn = txn
         self._fm = file_manager
+        self._mvcc = mvcc_manager
 
     def get_page(self, page_id: int) -> bytes:
         """Read page, returning shadow version if it exists."""
