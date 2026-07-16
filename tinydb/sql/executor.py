@@ -282,6 +282,154 @@ class HashJoinOperator(Operator):
         return result
 
 
+class SortMergeJoinOperator(Operator):
+    """Sort-merge join: sort both sides on join key, then merge. Equi-joins only."""
+
+    def __init__(self, left_op, right_op, join_type, on_condition,
+                 left_name, left_alias, left_cols,
+                 right_name, right_alias, right_cols,
+                 join_keys):
+        self.left_op = left_op
+        self.right_op = right_op
+        self.join_type = join_type
+        self.on_condition = on_condition
+        self.left_name = left_name
+        self.left_alias = left_alias
+        self.left_cols = left_cols
+        self.right_name = right_name
+        self.right_alias = right_alias
+        self.right_cols = right_cols
+        self.join_keys = join_keys
+        self._right_key = self._extract_right_key(on_condition)
+
+    def _extract_right_key(self, on_condition):
+        """Extract the right-side column name from an equality ON condition."""
+        if (self.on_condition is not None and
+                hasattr(self.on_condition, 'op') and self.on_condition.op == '=' and
+                hasattr(self.on_condition, 'left') and hasattr(self.on_condition, 'right')):
+            right = self.on_condition.right
+            if hasattr(right, 'name') and hasattr(right, 'table'):
+                return right.name
+        return self.join_keys[0] if self.join_keys else None
+
+    def __iter__(self):
+        left_sorted = sorted(list(self.left_op), key=lambda r: self._extract_left_key(r))
+        right_sorted = sorted(list(self.right_op), key=lambda r: self._extract_right_key_from_row(r))
+
+        i, j = 0, 0
+        matched_right = set()
+
+        while i < len(left_sorted) and j < len(right_sorted):
+            l_key = self._extract_left_key(left_sorted[i])
+            r_key = self._extract_right_key_from_row(right_sorted[j])
+
+            if l_key == r_key:
+                # Find all right rows with this key
+                k = j
+                right_run = []
+                while k < len(right_sorted) and self._extract_right_key_from_row(right_sorted[k]) == r_key:
+                    right_run.append(k)
+                    k += 1
+
+                # Find all left rows with this key
+                m = i
+                while m < len(left_sorted) and self._extract_left_key(left_sorted[m]) == l_key:
+                    for rk in right_run:
+                        matched_right.add(rk)
+                        yield self._combine_rows(left_sorted[m], right_sorted[rk])
+                    m += 1
+
+                i = m
+                j = k
+            elif l_key < r_key:
+                if self.join_type in ("LEFT", "FULL"):
+                    yield self._combine_with_nulls(left_sorted[i], None)
+                i += 1
+            else:
+                j += 1
+
+        # Remaining left rows
+        while i < len(left_sorted):
+            if self.join_type in ("LEFT", "FULL"):
+                yield self._combine_with_nulls(left_sorted[i], None)
+            i += 1
+
+        # Remaining right rows
+        if self.join_type in ("RIGHT", "FULL"):
+            for j in range(len(right_sorted)):
+                if j not in matched_right:
+                    yield self._combine_with_nulls(None, right_sorted[j])
+
+    def _extract_left_key(self, row):
+        """Extract join key from left row."""
+        if self.join_keys:
+            return tuple(row.get(k) for k in self.join_keys)
+        return ()
+
+    def _extract_right_key_from_row(self, row):
+        """Extract join key from right row."""
+        if self._right_key:
+            return (row.get(self._right_key),)
+        return ()
+
+    def _combine_rows(self, left_row, right_row):
+        """Merge two rows, handling column name conflicts."""
+        result = {}
+        left_prefix = self.left_alias or self.left_name
+        right_prefix = self.right_alias or self.right_name
+
+        left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
+        right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
+
+        conflicts = set(left_cols.keys()) & set(right_cols.keys())
+
+        for k, v in left_cols.items():
+            if k in conflicts:
+                result[f'{left_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        for k, v in right_cols.items():
+            if k in conflicts:
+                result[f'{right_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        return result
+
+    def _combine_with_nulls(self, left_row, right_row):
+        """Combine a row with NULLs for the missing side (OUTER JOIN)."""
+        result = {}
+        left_prefix = self.left_alias or self.left_name
+        right_prefix = self.right_alias or self.right_name
+
+        if left_row is None:
+            left_cols = {}
+        else:
+            left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
+
+        if right_row is None:
+            right_cols = {k: None for k in self.right_cols}
+        else:
+            right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
+
+        conflicts = set(left_cols.keys()) & set(right_cols.keys())
+
+        for k, v in left_cols.items():
+            if k in conflicts:
+                result[f'{left_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        for k, v in right_cols.items():
+            if k in conflicts:
+                result[f'{right_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        return result
+
+
 class FilterOperator(Operator):
     """WHERE clause filter operator."""
 

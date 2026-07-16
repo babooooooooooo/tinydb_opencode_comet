@@ -161,3 +161,54 @@ class TestHashJoin:
         )
         rows = list(op)
         assert len(rows) == 0
+
+
+class TestSortMergeJoin:
+    def test_inner_join(self, catalog_and_pool):
+        from tinydb.sql.executor import SortMergeJoinOperator
+        catalog, pool = catalog_and_pool
+        left = make_scan(catalog, pool, "users")
+        right = make_scan(catalog, pool, "orders")
+        on = BinaryOp('=', ColumnRef("id"), ColumnRef("user_id"))
+        op = SortMergeJoinOperator(
+            left, right, "INNER", on,
+            "users", None, ["id", "name", "age"],
+            "orders", None, ["id", "user_id", "amount"],
+            ["id"]
+        )
+        rows = list(op)
+        assert len(rows) == 3
+
+    def test_left_join(self, catalog_and_pool):
+        from tinydb.sql.executor import SortMergeJoinOperator
+        catalog, pool = catalog_and_pool
+        left = make_scan(catalog, pool, "users")
+        right = make_scan(catalog, pool, "orders")
+        on = BinaryOp('=', ColumnRef("id"), ColumnRef("user_id"))
+        op = SortMergeJoinOperator(
+            left, right, "LEFT", on,
+            "users", None, ["id", "name", "age"],
+            "orders", None, ["id", "user_id", "amount"],
+            ["id"]
+        )
+        rows = list(op)
+        assert len(rows) == 4
+
+    def test_many_to_many(self, catalog_and_pool):
+        from tinydb.sql.executor import SortMergeJoinOperator
+        catalog, pool = catalog_and_pool
+        # Both tables have id=1, so 1×1 = 1 match for id=1
+        left = make_scan(catalog, pool, "users")
+        right = make_scan(catalog, pool, "orders")
+        on = BinaryOp('=', ColumnRef("id"), ColumnRef("user_id"))
+        op = SortMergeJoinOperator(
+            left, right, "INNER", on,
+            "users", None, ["id", "name", "age"],
+            "orders", None, ["id", "user_id", "amount"],
+            ["id"]
+        )
+        rows = list(op)
+        # users.id=1 matches orders.user_id=1 (2 rows: amount 100, 200)
+        # users.id=2 matches orders.user_id=2 (1 row: amount 150)
+        # users.id=3 has no match
+        assert len(rows) == 3
