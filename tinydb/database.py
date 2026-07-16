@@ -7,6 +7,7 @@ from tinydb.buffer_pool import BufferPool
 from tinydb.catalog import Catalog
 from tinydb.index.index_manager import IndexManager
 from tinydb.transaction.txn_manager import TransactionManager, TransactionError
+from tinydb.concurrency.isolation import IsolationLevel
 from tinydb.sql.planner import Planner
 from tinydb.types import ColumnDef, DataType, convert_value
 from tinydb.page import RowId
@@ -77,9 +78,10 @@ class Database:
 
     def _get_pool(self):
         """Return active pool: shadow pool if in transaction, else main pool."""
-        if self._txn_mgr.has_active_txn() and self._txn_mgr._active_txn is not None:
+        if self._txn_mgr.has_active_txn():
             from tinydb.transaction.shadow_paging import ShadowBufferPool
-            return ShadowBufferPool(self._pool, self._txn_mgr._active_txn, self._fm)
+            entry = next(iter(self._txn_mgr.get_active_txns().values()))
+            return ShadowBufferPool(self._pool, entry.txn, self._fm)
         return self._pool
 
     def commit(self):
