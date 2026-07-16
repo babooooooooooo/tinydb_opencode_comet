@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from tinydb.sql.ast import (
     SelectStatement, InsertStatement, UpdateStatement,
     DeleteStatement, CreateTableStatement, DropTableStatement,
+    TableRef, JoinClause,
 )
 from tinydb.sql.expressions import (
-    Expression, ColumnRef, AggregateExpr, StarExpr, _to_bool,
+    Expression, ColumnRef, AggregateExpr, StarExpr, BinaryOp, _to_bool,
 )
 from tinydb.sql.executor import (
     Operator, ScanOperator, FilterOperator, ProjectOperator,
@@ -40,14 +41,39 @@ class JoinPlanner:
             return left.op
 
         for join in joins:
+            # Resolve NATURAL JOIN before processing
+            if join.join_type == "NATURAL":
+                join = self._resolve_natural_join(left, join)
+
             right = self._build_join_input(join.right_table)
             join_keys = self._extract_join_keys(join)
             algorithm = self._choose_algorithm(join, left, right, join_keys)
             join_op = self._build_join_operator(algorithm, left, right, join, join_keys)
-            # After join, left becomes the join op; metadata stays as left's
             left = _JoinInput(join_op, left.table_name, left.alias, left.columns)
 
         return left.op
+
+    def _resolve_natural_join(self, left_info, join):
+        """Resolve NATURAL JOIN by finding common columns between tables."""
+        common = set(left_info.columns) & set(
+            c.name for c in self.catalog.get_table(join.right_table.name).columns
+        )
+        if not common:
+            # No common columns → treat as CROSS JOIN
+            return JoinClause(
+                join_type="CROSS",
+                right_table=join.right_table,
+                on_condition=None,
+            )
+        # Use the first common column as join key
+        key = sorted(common)[0]
+        on_condition = BinaryOp('=', ColumnRef(key), ColumnRef(key))
+        return JoinClause(
+            join_type="INNER",
+            right_table=join.right_table,
+            on_condition=on_condition,
+            using_columns=[key],
+        )
 
     def _build_join_input(self, tableref):
         """Build scan operator + metadata for a table reference."""
