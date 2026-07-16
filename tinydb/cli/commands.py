@@ -104,8 +104,101 @@ class CommandHandler:
             return f"Timing is {state}. Usage: .timing on|off"
 
     def _import(self, arg: str) -> str:
-        """Import data from CSV/JSON — placeholder for Task 4."""
-        return "Not yet implemented (see Task 4)"
+        """Import data from a CSV or JSON file into a table."""
+        import csv
+        import json
+        import os
+
+        parts = arg.strip().split()
+        if len(parts) < 2:
+            return "Usage: .import <table> <filepath>"
+
+        table_name = parts[0]
+        filepath = parts[1]
+
+        if not os.path.isfile(filepath):
+            return f"Error: file not found: {filepath}"
+
+        ext = os.path.splitext(filepath)[1].lower()
+
+        try:
+            if ext == ".csv":
+                rows = self._read_csv(filepath)
+            elif ext == ".json":
+                rows = self._read_json(filepath)
+            else:
+                # Try CSV first, then JSON
+                try:
+                    rows = self._read_csv(filepath)
+                except Exception:
+                    rows = self._read_json(filepath)
+
+            if not rows:
+                return "Error: no data found in file"
+
+            # Get column names from first row
+            col_names = list(rows[0].keys())
+
+            # Build and execute INSERT statements
+            # The parser expects: INSERT INTO table VALUES (...)
+            count = 0
+            for row in rows:
+                values = []
+                for col in col_names:
+                    val = row.get(col, None)
+                    if val is None:
+                        values.append("NULL")
+                    elif isinstance(val, str):
+                        values.append(f"'{val}'")
+                    else:
+                        values.append(str(val))
+                sql = f"INSERT INTO {table_name} VALUES ({', '.join(values)})"
+                self._db.execute(sql)
+                count += 1
+
+            return f"{count} rows imported into {table_name}"
+
+        except Exception as e:
+            return f"Error: {e}"
+
+    def _read_csv(self, filepath: str) -> list[dict]:
+        """Read CSV file, return list of dicts."""
+        import csv
+        rows = []
+        with open(filepath, "r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                parsed = {}
+                for key, val in row.items():
+                    parsed[key.strip()] = self._parse_value(val.strip())
+                rows.append(parsed)
+        return rows
+
+    def _read_json(self, filepath: str) -> list[dict]:
+        """Read JSON file, return list of dicts."""
+        import json
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+        elif isinstance(data, dict):
+            return [data]
+        else:
+            raise ValueError("JSON must be an array of objects or a single object")
+
+    def _parse_value(self, val: str):
+        """Parse a string value into the appropriate Python type."""
+        if val.upper() == "NULL" or val == "":
+            return None
+        try:
+            return int(val)
+        except ValueError:
+            pass
+        try:
+            return float(val)
+        except ValueError:
+            pass
+        return val
 
     def _dump(self, arg: str) -> str:
         """Dump table data — placeholder for Task 5."""

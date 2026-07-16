@@ -57,3 +57,37 @@ class TestCommandHandler:
         result = ch.handle("foobar", "")
         assert result is None
         db.close()
+
+    def test_import_csv(self, tmp_path):
+        db = Database(str(tmp_path / "test.db"))
+        db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
+        # Create a CSV file
+        csv_path = tmp_path / "users.csv"
+        csv_path.write_text("id,name\n1,Alice\n2,Bob\n3,Charlie\n")
+        ch = CommandHandler(db)
+        output = ch.handle("import", f"users {csv_path}")
+        assert "3" in output  # 3 rows imported
+        # Verify data
+        result = db.execute("SELECT * FROM users")
+        assert result.row_count == 3
+        db.close()
+
+    def test_import_json(self, tmp_path):
+        db = Database(str(tmp_path / "test.db"))
+        db.execute("CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT, price FLOAT)")
+        json_path = tmp_path / "products.json"
+        json_path.write_text('[{"id": 1, "name": "Widget", "price": 9.99}, {"id": 2, "name": "Gadget", "price": 19.99}]')
+        ch = CommandHandler(db)
+        output = ch.handle("import", f"products {json_path}")
+        assert "2" in output
+        result = db.execute("SELECT * FROM products")
+        assert result.row_count == 2
+        db.close()
+
+    def test_import_file_not_found(self, tmp_path):
+        db = Database(str(tmp_path / "test.db"))
+        db.execute("CREATE TABLE t1 (id INTEGER PRIMARY KEY)")
+        ch = CommandHandler(db)
+        output = ch.handle("import", "t1 /nonexistent/file.csv")
+        assert "Error" in output or "not found" in output.lower()
+        db.close()
