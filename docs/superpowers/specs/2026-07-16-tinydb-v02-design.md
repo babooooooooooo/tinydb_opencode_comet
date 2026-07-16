@@ -1,3 +1,8 @@
+---
+archived-with: 2026-07-16-tinydb-v02-join, 2026-07-16-tinydb-v02-concurrency, 2026-07-16-tinydb-v02-cli
+status: final
+---
+
 # tinydb v0.2 总体设计文档
 
 > 创建日期: 2026-07-16
