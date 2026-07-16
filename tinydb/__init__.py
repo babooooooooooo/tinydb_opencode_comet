@@ -18,6 +18,11 @@ from tinydb.page import Page, PageType, RowId
 from tinydb.database import Database, QueryResult, DatabaseError
 from tinydb.index import BTreeIndex, IndexManager, IndexMeta
 from tinydb.transaction import Transaction, ShadowBufferPool, TransactionManager
+from tinydb.concurrency import (
+    IsolationLevel, LockMode, LockManager,
+    PageVersion, Snapshot, MVCCManager,
+    DeadlockDetector,
+)
 from tinydb.sql import IndexScanOperator, Planner
 from tinydb.cli import REPL
 
@@ -51,6 +56,13 @@ __all__ = [
     "Transaction",
     "ShadowBufferPool",
     "TransactionManager",
+    "IsolationLevel",
+    "LockMode",
+    "LockManager",
+    "PageVersion",
+    "Snapshot",
+    "MVCCManager",
+    "DeadlockDetector",
     "IndexScanOperator",
     "Planner",
     "REPL",
