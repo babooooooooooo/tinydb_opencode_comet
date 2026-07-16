@@ -58,3 +58,48 @@ class TestMVCCManagerBasic:
         snap = Snapshot(active_txns={1}, timestamp=time.time())
         result = self.mvcc.get_visible_version(999, snap)
         assert result is None
+
+
+class TestMVCCGC:
+    def setup_method(self):
+        self.mvcc = MVCCManager()
+
+    def test_gc_removes_invisible_versions(self):
+        """GC removes versions whose creator is not active."""
+        self.mvcc.create_version(0, b"v1", txn_id=1)
+        self.mvcc.create_version(0, b"v2", txn_id=2)
+        # Only txn 3 is active — versions from txn 1 and 2 can be GC'd
+        freed = self.mvcc.gc(active_txns={3})
+        assert freed == 2
+        assert 0 not in self.mvcc._versions
+
+    def test_gc_keeps_active_versions(self):
+        """GC keeps versions created by active transactions."""
+        self.mvcc.create_version(0, b"v1", txn_id=1)
+        self.mvcc.create_version(0, b"v2", txn_id=2)
+        freed = self.mvcc.gc(active_txns={1, 2})
+        assert freed == 0
+        assert 0 in self.mvcc._versions
+
+    def test_gc_partial(self):
+        """GC removes only inactive versions, keeps active ones."""
+        self.mvcc.create_version(0, b"v1", txn_id=1)
+        self.mvcc.create_version(0, b"v2", txn_id=2)
+        self.mvcc.create_version(0, b"v3", txn_id=3)
+        # txn 2 is active — v2 and v3 (newer) stay, v1 can be GC'd
+        freed = self.mvcc.gc(active_txns={2})
+        assert freed == 1
+        snap = Snapshot(active_txns={2}, timestamp=time.time())
+        assert self.mvcc.get_visible_version(0, snap) == b"v2"
+
+    def test_version_chain_traversal(self):
+        """Version chain is traversed correctly for visibility."""
+        self.mvcc.create_version(0, b"v1", txn_id=1)
+        self.mvcc.create_version(0, b"v2", txn_id=2)
+        self.mvcc.create_version(0, b"v3", txn_id=3)
+        # Only txn 1 active → sees v1
+        snap = Snapshot(active_txns={1}, timestamp=time.time())
+        assert self.mvcc.get_visible_version(0, snap) == b"v1"
+        # txn 2 active → sees v2
+        snap = Snapshot(active_txns={2}, timestamp=time.time())
+        assert self.mvcc.get_visible_version(0, snap) == b"v2"

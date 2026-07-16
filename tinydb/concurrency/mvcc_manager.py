@@ -89,5 +89,10 @@ class MVCCManager:
         return True
 
     def _no_active_txn_can_see(self, version: PageVersion, active_txns: set[int]) -> bool:
-        """Check if no active transaction could see this version."""
-        return version.created_txn not in active_txns
+        """Check if no active transaction could see this version.
+
+        A version can be GC'd only if it was created by a transaction older
+        than all currently active transactions (i.e., no active or future
+        transaction could ever need it).
+        """
+        return version.created_txn < min(active_txns)
