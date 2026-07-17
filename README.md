@@ -207,6 +207,14 @@ pytest tests/ -v
 
 覆盖：类型检查、行序列化、页操作、缓冲池 LRU、文件管理、目录 CRUD、SQL 解析、JOIN 查询、查询执行、B-tree 索引、事务 ACID、并发控制、死锁检测、CLI 交互、端到端集成测试。
 
+## 最近修复 (v0.2.1)
+
+- 修复 UPDATE 语句 WHERE 条件跳过行时的 NameError bug
+- 提取 `_JoinBase` 基类，消除三个 JOIN 算子 ~175 行重复代码
+- 移除脆弱的 `_is_complex_select` 字符串路由，所有 SELECT 统一走 SQL 引擎
+- 移除 database.py 中冗余的 regex 解析路径（`_exec_select`、`_exec_update`、`_exec_delete` 等）
+- INSERT/UPDATE/DELETE 统一通过 SQL 引擎执行，支持事务和索引自动同步
+
 ## 不为之事 (Out of Scope)
 
 - ALTER TABLE、视图、触发器、外键
