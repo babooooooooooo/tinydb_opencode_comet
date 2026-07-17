@@ -10,6 +10,11 @@ from tinydb.sql.errors import ExecutionError, ConstraintError
 from tinydb.sql.result import QueryResult
 from tinydb.types import ColumnDef, DataType
 
+FUNC_COUNT = 'COUNT'
+FUNC_SUM = 'SUM'
+FUNC_AVG = 'AVG'
+FUNC_VALUE = 'VALUE'
+
 
 class Operator:
     """Base class for all operators (Volcano model)."""
@@ -19,6 +24,89 @@ class Operator:
 
     def __next__(self) -> dict:
         raise NotImplementedError
+
+
+class _JoinBase(Operator):
+    """Base class for JOIN operators with shared row-combination logic."""
+
+    def _extract_right_key(self, on_condition):
+        """Extract the right-side column name from an equality ON condition."""
+        if (self.on_condition is not None and
+                hasattr(self.on_condition, 'op') and self.on_condition.op == '=' and
+                hasattr(self.on_condition, 'left') and hasattr(self.on_condition, 'right')):
+            right = self.on_condition.right
+            if hasattr(right, 'name') and hasattr(right, 'table'):
+                return right.name
+        return self.join_keys[0] if self.join_keys else None
+
+    def _extract_left_key_from_row(self, row):
+        """Extract join key from left row."""
+        if self.join_keys:
+            return tuple(row.get(k) for k in self.join_keys)
+        return ()
+
+    def _extract_right_key_from_row(self, row):
+        """Extract join key from right row."""
+        if self._right_key:
+            return (row.get(self._right_key),)
+        return ()
+
+    def _combine_rows(self, left_row, right_row):
+        """Merge two rows, handling column name conflicts."""
+        result = {}
+        left_prefix = self.left_alias or self.left_name
+        right_prefix = self.right_alias or self.right_name
+
+        left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
+        right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
+
+        conflicts = set(left_cols.keys()) & set(right_cols.keys())
+
+        for k, v in left_cols.items():
+            if k in conflicts:
+                result[f'{left_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        for k, v in right_cols.items():
+            if k in conflicts:
+                result[f'{right_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        return result
+
+    def _combine_with_nulls(self, left_row, right_row):
+        """Combine a row with NULLs for the missing side (OUTER JOIN)."""
+        result = {}
+        left_prefix = self.left_alias or self.left_name
+        right_prefix = self.right_alias or self.right_name
+
+        if left_row is None:
+            left_cols = {}
+        else:
+            left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
+
+        if right_row is None:
+            right_cols = {k: None for k in self.right_cols}
+        else:
+            right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
+
+        conflicts = set(left_cols.keys()) & set(right_cols.keys())
+
+        for k, v in left_cols.items():
+            if k in conflicts:
+                result[f'{left_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        for k, v in right_cols.items():
+            if k in conflicts:
+                result[f'{right_prefix}_{k}'] = v
+            else:
+                result[k] = v
+
+        return result
 
 
 class ScanOperator(Operator):
@@ -34,7 +122,7 @@ class ScanOperator(Operator):
             yield {"_rowid": row_id, **dict(zip(col_names, row_values))}
 
 
-class NestedLoopJoinOperator(Operator):
+class NestedLoopJoinOperator(_JoinBase):
     """Nested loop join: outer loop scans left, inner loop scans right."""
 
     def __init__(self, left_op, right_op, join_type, on_condition,
@@ -135,66 +223,8 @@ class NestedLoopJoinOperator(Operator):
                 return False
         return True
 
-    def _combine_rows(self, left_row, right_row):
-        """Merge two rows, handling column name conflicts."""
-        result = {}
-        left_prefix = self.left_alias or self.left_name
-        right_prefix = self.right_alias or self.right_name
 
-        left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
-        right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
-
-        # Find conflicts
-        conflicts = set(left_cols.keys()) & set(right_cols.keys())
-
-        for k, v in left_cols.items():
-            if k in conflicts:
-                result[f'{left_prefix}_{k}'] = v
-            else:
-                result[k] = v
-
-        for k, v in right_cols.items():
-            if k in conflicts:
-                result[f'{right_prefix}_{k}'] = v
-            else:
-                result[k] = v
-
-        return result
-
-    def _combine_with_nulls(self, left_row, right_row):
-        """Combine a row with NULLs for the missing side (OUTER JOIN)."""
-        result = {}
-        left_prefix = self.left_alias or self.left_name
-        right_prefix = self.right_alias or self.right_name
-
-        if left_row is None:
-            left_cols = {}
-        else:
-            left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
-
-        if right_row is None:
-            right_cols = {k: None for k in self.right_cols}
-        else:
-            right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
-
-        conflicts = set(left_cols.keys()) & set(right_cols.keys())
-
-        for k, v in left_cols.items():
-            if k in conflicts:
-                result[f'{left_prefix}_{k}'] = v
-            else:
-                result[k] = v
-
-        for k, v in right_cols.items():
-            if k in conflicts:
-                result[f'{right_prefix}_{k}'] = v
-            else:
-                result[k] = v
-
-        return result
-
-
-class HashJoinOperator(Operator):
+class HashJoinOperator(_JoinBase):
     """Hash join: build hash table on right, probe with left. Equi-joins only."""
 
     def __init__(self, left_op, right_op, join_type, on_condition,
@@ -214,16 +244,6 @@ class HashJoinOperator(Operator):
         self.join_keys = join_keys
         # Extract right-side key from ON condition if available
         self._right_key = self._extract_right_key(on_condition)
-
-    def _extract_right_key(self, on_condition):
-        """Extract the right-side column name from an equality ON condition."""
-        if (self.on_condition is not None and
-                hasattr(self.on_condition, 'op') and self.on_condition.op == '=' and
-                hasattr(self.on_condition, 'left') and hasattr(self.on_condition, 'right')):
-            right = self.on_condition.right
-            if hasattr(right, 'name') and hasattr(right, 'table'):
-                return right.name
-        return self.join_keys[0] if self.join_keys else None
 
     def __iter__(self):
         # Build phase: hash right table on join key
@@ -254,77 +274,8 @@ class HashJoinOperator(Operator):
                 if j not in matched_right:
                     yield self._combine_with_nulls(None, right_row)
 
-    def _extract_left_key_from_row(self, row):
-        """Extract join key from left row."""
-        if self.join_keys:
-            return tuple(row.get(k) for k in self.join_keys)
-        return ()
 
-    def _extract_right_key_from_row(self, row):
-        """Extract join key from right row (as tuple for hash consistency)."""
-        if self._right_key:
-            return (row.get(self._right_key),)
-        return ()
-
-    def _combine_rows(self, left_row, right_row):
-        """Merge two rows, handling column name conflicts."""
-        result = {}
-        left_prefix = self.left_alias or self.left_name
-        right_prefix = self.right_alias or self.right_name
-
-        left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
-        right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
-
-        conflicts = set(left_cols.keys()) & set(right_cols.keys())
-
-        for k, v in left_cols.items():
-            if k in conflicts:
-                result[f'{left_prefix}_{k}'] = v
-            else:
-                result[k] = v
-
-        for k, v in right_cols.items():
-            if k in conflicts:
-                result[f'{right_prefix}_{k}'] = v
-            else:
-                result[k] = v
-
-        return result
-
-    def _combine_with_nulls(self, left_row, right_row):
-        """Combine a row with NULLs for the missing side (OUTER JOIN)."""
-        result = {}
-        left_prefix = self.left_alias or self.left_name
-        right_prefix = self.right_alias or self.right_name
-
-        if left_row is None:
-            left_cols = {}
-        else:
-            left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
-
-        if right_row is None:
-            right_cols = {k: None for k in self.right_cols}
-        else:
-            right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
-
-        conflicts = set(left_cols.keys()) & set(right_cols.keys())
-
-        for k, v in left_cols.items():
-            if k in conflicts:
-                result[f'{left_prefix}_{k}'] = v
-            else:
-                result[k] = v
-
-        for k, v in right_cols.items():
-            if k in conflicts:
-                result[f'{right_prefix}_{k}'] = v
-            else:
-                result[k] = v
-
-        return result
-
-
-class SortMergeJoinOperator(Operator):
+class SortMergeJoinOperator(_JoinBase):
     """Sort-merge join: sort both sides on join key, then merge. Equi-joins only."""
 
     def __init__(self, left_op, right_op, join_type, on_condition,
@@ -344,25 +295,15 @@ class SortMergeJoinOperator(Operator):
         self.join_keys = join_keys
         self._right_key = self._extract_right_key(on_condition)
 
-    def _extract_right_key(self, on_condition):
-        """Extract the right-side column name from an equality ON condition."""
-        if (self.on_condition is not None and
-                hasattr(self.on_condition, 'op') and self.on_condition.op == '=' and
-                hasattr(self.on_condition, 'left') and hasattr(self.on_condition, 'right')):
-            right = self.on_condition.right
-            if hasattr(right, 'name') and hasattr(right, 'table'):
-                return right.name
-        return self.join_keys[0] if self.join_keys else None
-
     def __iter__(self):
-        left_sorted = sorted(list(self.left_op), key=lambda r: self._extract_left_key(r))
+        left_sorted = sorted(list(self.left_op), key=lambda r: self._extract_left_key_from_row(r))
         right_sorted = sorted(list(self.right_op), key=lambda r: self._extract_right_key_from_row(r))
 
         i, j = 0, 0
         matched_right = set()
 
         while i < len(left_sorted) and j < len(right_sorted):
-            l_key = self._extract_left_key(left_sorted[i])
+            l_key = self._extract_left_key_from_row(left_sorted[i])
             r_key = self._extract_right_key_from_row(right_sorted[j])
 
             if l_key == r_key:
@@ -375,7 +316,7 @@ class SortMergeJoinOperator(Operator):
 
                 # Find all left rows with this key
                 m = i
-                while m < len(left_sorted) and self._extract_left_key(left_sorted[m]) == l_key:
+                while m < len(left_sorted) and self._extract_left_key_from_row(left_sorted[m]) == l_key:
                     for rk in right_run:
                         matched_right.add(rk)
                         yield self._combine_rows(left_sorted[m], right_sorted[rk])
@@ -402,74 +343,6 @@ class SortMergeJoinOperator(Operator):
                 if j not in matched_right:
                     yield self._combine_with_nulls(None, right_sorted[j])
 
-    def _extract_left_key(self, row):
-        """Extract join key from left row."""
-        if self.join_keys:
-            return tuple(row.get(k) for k in self.join_keys)
-        return ()
-
-    def _extract_right_key_from_row(self, row):
-        """Extract join key from right row."""
-        if self._right_key:
-            return (row.get(self._right_key),)
-        return ()
-
-    def _combine_rows(self, left_row, right_row):
-        """Merge two rows, handling column name conflicts."""
-        result = {}
-        left_prefix = self.left_alias or self.left_name
-        right_prefix = self.right_alias or self.right_name
-
-        left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
-        right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
-
-        conflicts = set(left_cols.keys()) & set(right_cols.keys())
-
-        for k, v in left_cols.items():
-            if k in conflicts:
-                result[f'{left_prefix}_{k}'] = v
-            else:
-                result[k] = v
-
-        for k, v in right_cols.items():
-            if k in conflicts:
-                result[f'{right_prefix}_{k}'] = v
-            else:
-                result[k] = v
-
-        return result
-
-    def _combine_with_nulls(self, left_row, right_row):
-        """Combine a row with NULLs for the missing side (OUTER JOIN)."""
-        result = {}
-        left_prefix = self.left_alias or self.left_name
-        right_prefix = self.right_alias or self.right_name
-
-        if left_row is None:
-            left_cols = {}
-        else:
-            left_cols = {k: v for k, v in left_row.items() if k != '_rowid'}
-
-        if right_row is None:
-            right_cols = {k: None for k in self.right_cols}
-        else:
-            right_cols = {k: v for k, v in right_row.items() if k != '_rowid'}
-
-        conflicts = set(left_cols.keys()) & set(right_cols.keys())
-
-        for k, v in left_cols.items():
-            if k in conflicts:
-                result[f'{left_prefix}_{k}'] = v
-            else:
-                result[k] = v
-
-        for k, v in right_cols.items():
-            if k in conflicts:
-                result[f'{right_prefix}_{k}'] = v
-            else:
-                result[k] = v
-
-        return result
 
 
 class FilterOperator(Operator):
@@ -526,7 +399,7 @@ class AggregateOperator(Operator):
 
             state = groups[key]
             for i, (alias, func, arg_expr) in enumerate(self.aggregations):
-                if func == 'VALUE':
+                if func == FUNC_VALUE:
                     state[i] = row.get(alias)
                 else:
                     val = arg_expr.evaluate(row)
@@ -540,7 +413,7 @@ class AggregateOperator(Operator):
                         result[k_exp.name] = key[i]
 
             for i, (alias, func, _) in enumerate(self.aggregations):
-                if func == 'VALUE':
+                if func == FUNC_VALUE:
                     result[alias] = state[i]
                 else:
                     result[alias] = self._finalize(func, state[i])
@@ -551,13 +424,13 @@ class AggregateOperator(Operator):
         return [None] * len(self.aggregations)
 
     def _accumulate(self, func: str, state: object, val: object) -> object:
-        if func == 'COUNT':
+        if func == FUNC_COUNT:
             return (state or 0) + 1
-        elif func == 'SUM':
+        elif func == FUNC_SUM:
             if val is None:
                 return state
             return (state or 0) + val
-        elif func == 'AVG':
+        elif func == FUNC_AVG:
             if state is None:
                 state = (0, 0)
             if val is not None:
@@ -568,7 +441,7 @@ class AggregateOperator(Operator):
     def _finalize(self, func: str, state: object) -> object:
         if state is None:
             return None
-        if func == 'AVG':
+        if func == FUNC_AVG:
             if state[1] == 0:
                 return None
             return state[0] / state[1]
@@ -619,10 +492,11 @@ class LimitOperator(Operator):
 class DmlOperator(Operator):
     """DML (INSERT/UPDATE/DELETE) operator."""
 
-    def __init__(self, stmt, catalog, buffer_pool):
+    def __init__(self, stmt, catalog, buffer_pool, index_manager=None):
         self.stmt = stmt
         self.catalog = catalog
         self.buffer_pool = buffer_pool
+        self._index_mgr = index_manager
 
     def __iter__(self):
         result = self._execute()
@@ -639,6 +513,7 @@ class DmlOperator(Operator):
     def _execute_insert(self) -> QueryResult:
         table = self.catalog.get_table(self.stmt.table)
         col_names = [col.name for col in table.columns]
+        table_name = self.stmt.table
 
         for value_exprs in self.stmt.values:
             row_values = [expr.evaluate({}) for expr in value_exprs]
@@ -648,13 +523,16 @@ class DmlOperator(Operator):
             else:
                 ordered_row = row_values
             self._check_constraints(table, ordered_row)
-            table.insert(self.buffer_pool, ordered_row)
+            rid = table.insert(self.buffer_pool, ordered_row)
+            if self._index_mgr:
+                self._index_mgr.after_insert(table_name, rid, ordered_row)
 
         return QueryResult([], [], len(self.stmt.values))
 
     def _execute_update(self) -> QueryResult:
         table = self.catalog.get_table(self.stmt.table)
         col_names = [col.name for col in table.columns]
+        table_name = self.stmt.table
         updated = 0
 
         for row_id, row_values in table.scan(self.buffer_pool):
@@ -665,6 +543,8 @@ class DmlOperator(Operator):
                     col_idx = col_names.index(col_name)
                     new_row[col_idx] = expr.evaluate(row_dict)
                 self._check_constraints_update(table, row_id, new_row)
+                if self._index_mgr:
+                    self._index_mgr.after_update(table_name, row_id, row_values, new_row)
                 table.update(self.buffer_pool, row_id, new_row)
                 updated += 1
 
@@ -673,14 +553,17 @@ class DmlOperator(Operator):
     def _execute_delete(self) -> QueryResult:
         table = self.catalog.get_table(self.stmt.table)
         col_names = [col.name for col in table.columns]
+        table_name = self.stmt.table
         to_delete = []
 
         for row_id, row_values in table.scan(self.buffer_pool):
             row_dict = dict(zip(col_names, row_values))
             if self.stmt.where is None or _to_bool(self.stmt.where.evaluate(row_dict)):
-                to_delete.append(row_id)
+                to_delete.append((row_id, row_values))
 
-        for row_id in to_delete:
+        for row_id, row_values in to_delete:
+            if self._index_mgr:
+                self._index_mgr.after_delete(table_name, row_id, row_values)
             table.delete(self.buffer_pool, row_id)
 
         return QueryResult([], [], len(to_delete))

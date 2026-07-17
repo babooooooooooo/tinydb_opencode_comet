@@ -163,11 +163,13 @@ class Planner:
         self.buffer_pool = buffer_pool
         self._join_planner = JoinPlanner(catalog, buffer_pool)
 
-    def plan(self, stmt) -> Operator:
+    def plan(self, stmt, pool=None, index_manager=None) -> Operator:
+        if pool is None:
+            pool = self.buffer_pool
         if isinstance(stmt, SelectStatement):
-            return self._plan_select(stmt)
+            return self._plan_select(stmt, pool)
         elif isinstance(stmt, (InsertStatement, UpdateStatement, DeleteStatement)):
-            return DmlOperator(stmt, self.catalog, self.buffer_pool)
+            return DmlOperator(stmt, self.catalog, pool, index_manager=index_manager)
         elif isinstance(stmt, CreateTableStatement):
             return CreateTableOperator(stmt, self.catalog)
         elif isinstance(stmt, DropTableStatement):
@@ -175,12 +177,14 @@ class Planner:
         else:
             raise PlanningError(f"Unknown statement type: {type(stmt)}")
 
-    def _plan_select(self, stmt: SelectStatement) -> Operator:
+    def _plan_select(self, stmt: SelectStatement, pool=None) -> Operator:
+        if pool is None:
+            pool = self.buffer_pool
         if stmt.joins:
             op = self._join_planner.plan_joins(stmt.from_table, stmt.joins, stmt.where)
         else:
             table = self.catalog.get_table(stmt.from_table.name)
-            op = ScanOperator(table, self.buffer_pool)
+            op = ScanOperator(table, pool)
 
         if stmt.where:
             op = FilterOperator(op, stmt.where)
