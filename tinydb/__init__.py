@@ -27,7 +27,7 @@ from tinydb.concurrency import (
 from tinydb.sql import Planner
 from tinydb.cli import REPL
 
-__version__ = "0.1.0"
+__version__ = "0.2.3"
 
 __all__ = [
     "DataType",
