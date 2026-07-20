@@ -137,14 +137,6 @@ class JoinPlanner:
                 right_info.table_name, right_info.alias, right_info.columns,
                 join_keys,
             )
-        elif algorithm == "sort_merge":
-            from tinydb.sql.executor import SortMergeJoinOperator
-            return SortMergeJoinOperator(
-                left_info.op, right_info.op, join.join_type, join.on_condition,
-                left_info.table_name, left_info.alias, left_info.columns,
-                right_info.table_name, right_info.alias, right_info.columns,
-                join_keys,
-            )
         else:
             from tinydb.sql.executor import NestedLoopJoinOperator
             return NestedLoopJoinOperator(

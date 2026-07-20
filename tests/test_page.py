@@ -4,7 +4,7 @@ from tinydb.page import (
     Page, PageType, RowId, PAGE_HEADER_FORMAT,
     create_empty_page, parse_page_header, pack_page_header,
     insert_row_into_page, get_row_from_page, delete_row_from_page,
-    get_all_rows_from_page, get_free_space,
+    get_all_rows_from_page, get_free_space, get_slot_count,
 )
 from tinydb.constants import PAGE_SIZE, PAGE_HEADER_SIZE, SLOT_SIZE, MAX_FREE_SPACE
 
@@ -58,7 +58,7 @@ class TestPageCreation:
         assert isinstance(page, Page)
         assert page.page_id == 1
         assert page.page_type == PageType.DATA
-        assert page.slot_count == 0
+        assert get_slot_count(page) == 0
         assert page.dirty is False
         assert len(page.data) == PAGE_SIZE
 
@@ -72,7 +72,7 @@ class TestPageOperations:
         row_data = b"hello world row data"
         slot_idx = insert_row_into_page(page, row_data)
         assert slot_idx == 0
-        assert page.slot_count == 1
+        assert get_slot_count(page) == 1
         assert page.dirty is True
 
     def test_insert_and_get_row(self, page):
@@ -86,7 +86,7 @@ class TestPageOperations:
         for i, row in enumerate(rows):
             slot_idx = insert_row_into_page(page, row)
             assert slot_idx == i
-        assert page.slot_count == 3
+        assert get_slot_count(page) == 3
         all_rows = get_all_rows_from_page(page)
         assert all_rows == rows
 

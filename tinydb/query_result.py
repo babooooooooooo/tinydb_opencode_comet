@@ -1,12 +1,11 @@
-"""QueryResult return object."""
+"""QueryResult: canonical result type for database operations."""
 from dataclasses import dataclass
 
 
 @dataclass
 class QueryResult:
-    """Result of a SQL query execution."""
-    rows: list
-    columns: list
+    columns: list[str]
+    rows: list[list]
     row_count: int
 
     def __iter__(self):

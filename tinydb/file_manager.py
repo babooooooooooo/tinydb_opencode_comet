@@ -144,10 +144,9 @@ class FileManager:
         """Extend the file to hold at least new_count pages."""
         if new_count <= self.page_count:
             return
-        # Seek to end and write zero pages to extend the file
+        pages_to_add = new_count - self.page_count
         self._file.seek(self.page_count * PAGE_SIZE)
-        for _ in range(new_count - self.page_count):
-            self._file.write(b"\x00" * PAGE_SIZE)
+        self._file.write(b"\x00" * (PAGE_SIZE * pages_to_add))
         self._file.flush()
         self.page_count = new_count
         self._write_header()

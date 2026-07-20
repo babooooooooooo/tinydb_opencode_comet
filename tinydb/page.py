@@ -48,11 +48,6 @@ class Page:
     data: bytes
     dirty: bool = False
 
-    @property
-    def slot_count(self) -> int:
-        header = parse_page_header(self.data)
-        return header["slot_count"]
-
 
 def create_empty_page(page_id: int, page_type: PageType) -> Page:
     data = bytearray(PAGE_SIZE)
@@ -196,9 +191,15 @@ def delete_row_from_page(page: Page, slot_idx: int) -> None:
     page.dirty = True
 
 
+def get_slot_count(page: Page) -> int:
+    """Get slot count from page header without creating a full dict."""
+    return struct.unpack_from("<H", page.data, 5)[0]
+
+
 def get_all_rows_from_page(page: Page) -> list[bytes]:
     result = []
-    for i in range(page.slot_count):
+    count = get_slot_count(page)
+    for i in range(count):
         row = get_row_from_page(page, i)
         if row is not None:
             result.append(row)

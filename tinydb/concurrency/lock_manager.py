@@ -4,6 +4,10 @@ from collections import deque
 from enum import Enum
 
 
+class DeadlockError(Exception):
+    """Raised when a deadlock is detected."""
+
+
 class LockMode(Enum):
     """Lock mode for page-level locking."""
     SHARED = "S"
@@ -22,18 +26,33 @@ _COMPATIBILITY = {
 class LockManager:
     """Manages page-level Shared/Exclusive locks with FIFO wait queue."""
 
-    def __init__(self):
+    def __init__(self, deadlock_detector=None):
         self._lock = threading.Lock()
         # page_id -> {txn_id: LockMode}
         self._holders: dict[int, dict[int, LockMode]] = {}
         # page_id -> deque of (txn_id, mode, Condition)
         self._wait_queue: dict[int, deque] = {}
+        self._deadlock_detector = deadlock_detector
 
     def acquire(self, txn_id: int, page_id: int, mode: LockMode, timeout: float = 5.0) -> bool:
         """Acquire a lock on a page. Returns True if acquired, False if timed out."""
         with self._lock:
             if self._try_acquire(txn_id, page_id, mode):
                 return True
+            # Register wait-for edges for deadlock detection
+            if self._deadlock_detector is not None:
+                for holder_id in self._holders.get(page_id, {}):
+                    if holder_id != txn_id:
+                        self._deadlock_detector.add_wait_edge(txn_id, holder_id)
+                cycle = self._deadlock_detector.detect_cycle()
+                if cycle is not None:
+                    # Remove the edges we just added
+                    for holder_id in self._holders.get(page_id, {}):
+                        if holder_id != txn_id:
+                            self._deadlock_detector.remove_wait_edge(txn_id, holder_id)
+                    raise DeadlockError(
+                        f"Deadlock detected: transactions {cycle}"
+                    )
             # Need to wait
             if page_id not in self._wait_queue:
                 self._wait_queue[page_id] = deque()
@@ -48,13 +67,23 @@ class LockManager:
                 timeout=timeout,
             )
         if result:
+            # Remove wait-for edges on success
+            if self._deadlock_detector is not None:
+                with self._lock:
+                    for holder_id in list(self._holders.get(page_id, {}).keys()):
+                        if holder_id != txn_id:
+                            self._deadlock_detector.remove_wait_edge(txn_id, holder_id)
             return True
-        # Timeout — remove from wait queue
+        # Timeout — remove from wait queue and wait-for edges
         with self._lock:
             if page_id in self._wait_queue:
                 self._wait_queue[page_id] = deque(
                     e for e in self._wait_queue[page_id] if e[0] != txn_id
                 )
+        if self._deadlock_detector is not None:
+            for holder_id in list(self._holders.get(page_id, {}).keys()):
+                if holder_id != txn_id:
+                    self._deadlock_detector.remove_wait_edge(txn_id, holder_id)
         return False
 
     def release(self, txn_id: int, page_id: int) -> None:

@@ -81,7 +81,12 @@ class Catalog:
         )
         self._tables[name] = meta
 
-        self._write_table_meta(meta)
+        try:
+            self._write_table_meta(meta)
+        except Exception:
+            self._fm.free_page(root_page)
+            del self._tables[name]
+            raise
 
     def drop_table(self, name: str) -> None:
         """Remove a table from the catalog and free its root page."""
@@ -161,16 +166,7 @@ class Catalog:
 
     def _write_table_meta(self, meta: TableMeta) -> None:
         """Write a single table's metadata into the catalog page."""
-        columns_json = json.dumps([
-            {
-                "name": col.name,
-                "data_type": col.data_type.value,
-                "nullable": col.nullable,
-                "primary_key": col.primary_key,
-                "unique": col.unique,
-            }
-            for col in meta.columns
-        ])
+        columns_json = json.dumps([col.to_dict() for col in meta.columns])
 
         row = [meta.table_name, columns_json, meta.root_page, meta.primary_key]
         serialized = serialize_row(row, _CATALOG_COLUMNS)
@@ -189,16 +185,7 @@ class Catalog:
         """Rewrite the catalog pages from in-memory state."""
         page = create_empty_page(self._catalog_page_id, PageType.CATALOG)
         for meta in self._tables.values():
-            columns_json = json.dumps([
-                {
-                    "name": col.name,
-                    "data_type": col.data_type.value,
-                    "nullable": col.nullable,
-                    "primary_key": col.primary_key,
-                    "unique": col.unique,
-                }
-                for col in meta.columns
-            ])
+            columns_json = json.dumps([col.to_dict() for col in meta.columns])
             row = [meta.table_name, columns_json, meta.root_page, meta.primary_key]
             serialized = serialize_row(row, _CATALOG_COLUMNS)
             insert_row_into_page(page, serialized)

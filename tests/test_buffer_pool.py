@@ -2,19 +2,9 @@
 """Tests for tinydb.buffer_pool module."""
 import pytest
 from unittest.mock import MagicMock
-from tinydb.buffer_pool import BufferPool, LRU_Node
+from tinydb.buffer_pool import BufferPool
 from tinydb.page import create_empty_page, PageType, parse_page_header
 from tinydb.constants import PAGE_SIZE
-
-
-class TestLRUNode:
-    def test_node_creation(self):
-        node = LRU_Node(page_id=1, page=None)
-        assert node.page_id == 1
-        assert node.page is None
-        assert node.prev is None
-        assert node.next is None
-        assert node.ref_count == 0
 
 
 class TestBufferPool:

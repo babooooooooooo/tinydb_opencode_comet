@@ -7,7 +7,7 @@ from tinydb.sql.ast import (
     DeleteStatement, CreateTableStatement, DropTableStatement,
 )
 from tinydb.sql.errors import ExecutionError, ConstraintError
-from tinydb.sql.result import QueryResult
+from tinydb.query_result import QueryResult
 from tinydb.types import ColumnDef, DataType
 
 FUNC_COUNT = 'COUNT'
@@ -459,10 +459,17 @@ class SortOperator(Operator):
         rows = list(self.source)
         for expr, direction in reversed(self.order_keys):
             rows.sort(
-                key=lambda r, e=expr: (e.evaluate(r) is None, e.evaluate(r) or 0),
-                reverse=(direction == 'DESC')
+                key=self._sort_key(expr),
+                reverse=(direction == 'DESC'),
             )
         yield from rows
+
+    @staticmethod
+    def _sort_key(expr):
+        def key(row):
+            val = expr.evaluate(row)
+            return (val is None, val or 0)
+        return key
 
 
 class LimitOperator(Operator):
@@ -522,7 +529,7 @@ class DmlOperator(Operator):
                 ordered_row = [row_dict.get(cn) for cn in col_names]
             else:
                 ordered_row = row_values
-            self._check_constraints(table, ordered_row)
+            self._check_constraints(table, ordered_row, table_name)
             rid = table.insert(self.buffer_pool, ordered_row)
             if self._index_mgr:
                 self._index_mgr.after_insert(table_name, rid, ordered_row)
@@ -542,7 +549,7 @@ class DmlOperator(Operator):
                 for col_name, expr in self.stmt.assignments:
                     col_idx = col_names.index(col_name)
                     new_row[col_idx] = expr.evaluate(row_dict)
-                self._check_constraints_update(table, row_id, new_row)
+                self._check_constraints_update(table, row_id, new_row, table_name)
                 if self._index_mgr:
                     self._index_mgr.after_update(table_name, row_id, row_values, new_row)
                 table.update(self.buffer_pool, row_id, new_row)
@@ -568,32 +575,45 @@ class DmlOperator(Operator):
 
         return QueryResult([], [], len(to_delete))
 
-    def _check_constraints(self, table, row) -> None:
+    def _check_constraints(self, table, row, table_name="") -> None:
         for i, (val, col) in enumerate(zip(row, table.columns)):
             if not col.nullable and val is None:
                 raise ConstraintError(
                     f"NOT NULL constraint violated on column '{col.name}'"
                 )
             if col.primary_key or col.unique:
-                self._check_unique(table, i, val, exclude_row_id=None)
+                self._check_unique(table, table_name, i, val, exclude_row_id=None)
 
-    def _check_constraints_update(self, table, row_id, new_row) -> None:
+    def _check_constraints_update(self, table, row_id, new_row, table_name="") -> None:
         for i, (val, col) in enumerate(zip(new_row, table.columns)):
             if not col.nullable and val is None:
                 raise ConstraintError(
                     f"NOT NULL constraint violated on column '{col.name}'"
                 )
             if col.primary_key or col.unique:
-                self._check_unique(table, i, val, exclude_row_id=row_id)
+                self._check_unique(table, table_name, i, val, exclude_row_id=row_id)
 
-    def _check_unique(self, table, col_idx, value, exclude_row_id) -> None:
+    def _check_unique(self, table, table_name, col_idx, value, exclude_row_id) -> None:
+        col = table.columns[col_idx]
+        # Use B-tree index if available for O(log n) lookup
+        if self._index_mgr and table_name:
+            idx_meta = self._index_mgr.get_index(table_name, col.name)
+            if idx_meta is not None:
+                btree = self._index_mgr._btrees[idx_meta.name]
+                if btree.search(value):
+                    raise ConstraintError(
+                        f"{'PRIMARY KEY' if col.primary_key else 'UNIQUE'} "
+                        f"constraint violated on column '{col.name}': "
+                        f"value {value!r} already exists"
+                    )
+                return
+        # Fallback: full table scan
         for existing_id, existing_row in table.scan(self.buffer_pool):
             if exclude_row_id is not None:
                 if (existing_id.page_id == exclude_row_id.page_id and
                         existing_id.slot_index == exclude_row_id.slot_index):
                     continue
             if existing_row[col_idx] == value:
-                col = table.columns[col_idx]
                 raise ConstraintError(
                     f"{'PRIMARY KEY' if col.primary_key else 'UNIQUE'} "
                     f"constraint violated on column '{col.name}': "

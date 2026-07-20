@@ -1,7 +1,6 @@
 # tinydb/database.py
 """Database: unified entry point integrating storage, SQL, index, and transaction."""
 import re
-from dataclasses import dataclass
 from tinydb.file_manager import FileManager
 from tinydb.buffer_pool import BufferPool
 from tinydb.catalog import Catalog
@@ -9,14 +8,8 @@ from tinydb.index.index_manager import IndexManager
 from tinydb.transaction.txn_manager import TransactionManager, TransactionError
 from tinydb.concurrency.isolation import IsolationLevel
 from tinydb.sql.planner import Planner
+from tinydb.query_result import QueryResult
 from tinydb.types import ColumnDef, DataType
-
-
-@dataclass
-class QueryResult:
-    columns: list[str]
-    rows: list[list]
-    row_count: int
 
 
 class DatabaseError(Exception):
@@ -167,10 +160,14 @@ class Database:
             parts = col_def.strip().split()
             col_name = parts[0]
             col_type = DataType(parts[1].upper())
-            is_pk = "PRIMARY" in col_def.upper() and "KEY" in col_def.upper()
-            nullable = "NOT NULL" not in col_def.upper() and not is_pk
-            columns.append(ColumnDef(name=col_name, data_type=col_type,
-                                     nullable=nullable, primary_key=is_pk))
+            upper_def = col_def.upper()
+            is_pk = "PRIMARY" in upper_def and "KEY" in upper_def
+            is_unique = "UNIQUE" in upper_def
+            nullable = "NOT NULL" not in upper_def and not is_pk
+            columns.append(ColumnDef(
+                name=col_name, data_type=col_type,
+                nullable=nullable, primary_key=is_pk, unique=is_unique,
+            ))
             if is_pk:
                 pk = col_name
 

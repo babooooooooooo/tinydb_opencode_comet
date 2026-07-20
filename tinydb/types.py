@@ -25,6 +25,15 @@ class ColumnDef:
     primary_key: bool = False
     unique: bool = False
 
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "data_type": self.data_type.value,
+            "nullable": self.nullable,
+            "primary_key": self.primary_key,
+            "unique": self.unique,
+        }
+
 
 @dataclass
 class Value:
@@ -51,10 +60,9 @@ def validate_value(value: object, column: ColumnDef) -> None:
     col_type = column.data_type
 
     if col_type == DataType.INTEGER:
-        if isinstance(value, float):
+        if isinstance(value, bool) or isinstance(value, float):
             raise SchemaMismatchError(
-                f"Column '{column.name}' is INTEGER but received float: {value}. "
-                "Implicit float-to-int conversion is not allowed."
+                f"Column '{column.name}' is INTEGER but received {type(value).__name__}: {value}"
             )
         if not isinstance(value, int):
             raise SchemaMismatchError(
@@ -62,7 +70,7 @@ def validate_value(value: object, column: ColumnDef) -> None:
             )
 
     elif col_type == DataType.FLOAT:
-        if not isinstance(value, (int, float)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise SchemaMismatchError(
                 f"Column '{column.name}' is FLOAT but received {type(value).__name__}"
             )

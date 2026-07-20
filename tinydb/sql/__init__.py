@@ -1,7 +1,4 @@
 """tinydb SQL engine package."""
-from tinydb.sql.database import Database
-from tinydb.sql.result import QueryResult
-from tinydb.sql.executor import IndexScanOperator
 from tinydb.sql.planner import Planner
 from tinydb.sql.errors import (
     SQLError,
@@ -13,9 +10,6 @@ from tinydb.sql.errors import (
 )
 
 __all__ = [
-    "Database",
-    "QueryResult",
-    "IndexScanOperator",
     "Planner",
     "SQLError",
     "LexerError",

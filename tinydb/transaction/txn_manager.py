@@ -34,9 +34,9 @@ class TransactionManager:
         self._active_txns: dict[int, TransactionEntry] = {}
         self._txn_counter = 0
         self._lock = threading.Lock()
-        self._lock_mgr = LockManager()
-        self._mvcc = MVCCManager()
         self._deadlock_detector = DeadlockDetector()
+        self._lock_mgr = LockManager(deadlock_detector=self._deadlock_detector)
+        self._mvcc = MVCCManager()
 
     def begin(self, isolation: IsolationLevel | None = None) -> int:
         """Begin a new transaction. Returns txn_id."""
@@ -119,13 +119,15 @@ class TransactionManager:
             if not self._active_txns:
                 return page_id
             txn_id, entry = next(iter(self._active_txns.items()))
-        if page_id in entry.txn.shadow_pages:
-            return entry.txn.shadow_pages[page_id]
-        shadow_id = self._fm.alloc_page()
-        orig_data = self._pool.get_page(page_id)
-        self._pool._fm.write_page(shadow_id, orig_data)
-        entry.txn.shadow_pages[page_id] = shadow_id
-        return shadow_id
+            if page_id in entry.txn.shadow_pages:
+                return entry.txn.shadow_pages[page_id]
+            shadow_id = self._fm.alloc_page()
+            orig_data = self._pool.get_page(page_id)
+            self._pool._fm.write_page(shadow_id, orig_data)
+            # Record MVCC version for snapshot reads
+            self._mvcc.create_version(page_id, orig_data, txn_id)
+            entry.txn.shadow_pages[page_id] = shadow_id
+            return shadow_id
 
     def _resolve_txn(self, txn_id: int | None) -> TransactionEntry:
         """Resolve a transaction by ID or return the single active one."""
