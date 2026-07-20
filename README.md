@@ -2,7 +2,7 @@
 
 一个从零构建的 Python 嵌入式关系型数据库，用于教学和学习数据库核心原理。
 
-当前版本: **v0.2.1**
+当前版本: **v0.2.3**
 
 ## 特性
 
@@ -11,10 +11,10 @@
 - **DDL**: `CREATE TABLE`, `DROP TABLE`
 - **DML**: `INSERT`, `SELECT`, `UPDATE`, `DELETE`
 - **多表 JOIN**: `INNER/LEFT/RIGHT/FULL OUTER/CROSS/NATURAL/SELF JOIN`
-- **三种 JOIN 算法**: Nested Loop Join、Hash Join、Sort-Merge Join
+- **两种 JOIN 算法**: Nested Loop Join、Hash Join
 - **代价优化**: 基于行数统计自动选择 JOIN 算法（小表 Nested Loop，大表 Hash Join）
 - **条件查询**: `WHERE` (AND/OR, `IS NULL`)、`ORDER BY`、`LIMIT`、`OFFSET`
-- **列约束**: `PRIMARY KEY`, `NOT NULL`, `UNIQUE`
+- **列约束**: `PRIMARY KEY`, `NOT NULL`, `UNIQUE`（利用 B-tree 索引加速检查）
 - **聚合函数**: `COUNT`, `SUM`, `AVG` + `GROUP BY`
 - **B-tree 索引** 加速等值和范围查询
 - **ACID 事务**: `BEGIN`, `COMMIT`, `ROLLBACK`（Shadow Paging + MVCC）
@@ -54,13 +54,13 @@ tinydb> .exit
 │                      SQL Engine                          │
 │  Lexer → Parser → Planner → Executor                    │
 │  (Scan/Filter/Project/Aggregate/Sort/Limit/Join)         │
-│  JOIN Algorithms: NestedLoop / Hash / SortMerge          │
+│  JOIN Algorithms: NestedLoop / Hash                      │
 └──────────────────────┬──────────────────────────────────┘
-                       │ Table API
+                        │ Table API
 ┌──────────────────────┴──────────────────────────────────┐
 │                   Storage Engine                         │
 │  TypeSystem → RowFormat → Page → FileManager            │
-│  BufferPool (LRU + pin/unpin + Page Latch)              │
+│  BufferPool (OrderedDict LRU + pin/unpin)               │
 │  Catalog (tinydb_master)                                │
 │  B-tree Index + IndexManager                            │
 │  Transaction (Shadow Paging)                            │
@@ -89,7 +89,7 @@ tinydb> .exit
 | RowFormat | `tinydb/row_format.py` | NULL 位图、行序列化/反序列化 |
 | Page | `tinydb/page.py` | Slotted Page 数据结构、slot 管理 |
 | FileManager | `tinydb/file_manager.py` | 文件 I/O、空闲页分配、文件头管理 |
-| BufferPool | `tinydb/buffer_pool.py` | LRU 页缓存、pin/unpin、脏页管理、Page Latch |
+| BufferPool | `tinydb/buffer_pool.py` | LRU 页缓存 (OrderedDict)、pin/unpin、脏页管理 |
 | Catalog | `tinydb/catalog.py` | 系统目录表、表元数据管理 |
 | Table | `tinydb/table.py` | 表级 CRUD API |
 | Lexer | `tinydb/sql/lexer.py` | SQL 词法分析器 |
@@ -100,10 +100,11 @@ tinydb> .exit
 | IndexManager | `tinydb/index/index_manager.py` | 索引管理器 + DML 钩子 |
 | Transaction | `tinydb/transaction/shadow_paging.py` | Shadow Paging 事务 |
 | TxnManager | `tinydb/transaction/txn_manager.py` | 多事务管理器 |
-| LockManager | `tinydb/concurrency/lock_manager.py` | 共享/独占锁管理 |
+| LockManager | `tinydb/concurrency/lock_manager.py` | 共享/独占锁管理 + 死锁检测 |
 | MVCCManager | `tinydb/concurrency/mvcc_manager.py` | 多版本并发控制 |
 | DeadlockDetector | `tinydb/concurrency/deadlock_detector.py` | 死锁检测与恢复 |
 | Isolation | `tinydb/concurrency/isolation.py` | 隔离级别定义 |
+| QueryResult | `tinydb/query_result.py` | 查询结果类型 |
 | Database | `tinydb/database.py` | Database 公共入口 |
 | CLI/REPL | `tinydb/cli/repl.py` | 交互式 REPL |
 | CLI 入口 | `tinydb/cli/__main__.py` | `tinydb` 命令入口 |
@@ -125,6 +126,7 @@ tinydb/
 ├── table.py             # 表 CRUD
 ├── constants.py         # 全局常量
 ├── exceptions.py        # 异常体系
+├── query_result.py      # 查询结果类型
 ├── database.py          # Database 入口
 ├── sql/                 # SQL 引擎
 │   ├── lexer.py
@@ -150,7 +152,7 @@ tinydb/
     ├── completer.py
     └── commands.py
 
-tests/                   # pytest 测试套件 (473 tests)
+tests/                   # pytest 测试套件 (446 tests)
 ├── concurrency/          # 并发控制测试
 │   ├── test_lock_manager.py
 │   ├── test_mvcc_manager.py
@@ -174,11 +176,11 @@ tests/                   # pytest 测试套件 (473 tests)
 |------|------|------|
 | SQL 方言 | PostgreSQL 风格 | 标准、可读 |
 | 行存储模型 | Slotted Page | 经典教学模型 (SQLite/PostgreSQL) |
-| 缓冲池策略 | OrderedDict + 双链表 LRU | 兼顾代码简洁和算法教学 |
+| 缓冲池策略 | OrderedDict LRU | 代码简洁、O(1) 读写、算法教学 |
 | 事务模型 | Shadow Paging | 实现简单、回滚自然、适合教学 |
 | 并发模型 | 锁 + MVCC 混合 | 读不阻塞写、写不阻塞读 |
-| JOIN 算法 | 三种 + 代价选择 | 覆盖不同场景的最优执行 |
-| 死锁处理 | 超时 + 等待图 | 双重保障、自动恢复 |
+| JOIN 算法 | 两种 + 代价选择 | 覆盖不同场景的最优执行 |
+| 死锁处理 | 等待图 + 超时 | 双重保障、自动恢复 |
 | CLI 高亮 | pygments | 成熟稳定、多语言支持 |
 | 页大小 | 固定 4KB | 与 OS 内存页对齐 |
 | B-tree 叶节点 | 存行指针 (非聚簇) | 教学演示、避免数据物理重组 |
@@ -207,13 +209,22 @@ pytest tests/ -v
 
 覆盖：类型检查、行序列化、页操作、缓冲池 LRU、文件管理、目录 CRUD、SQL 解析、JOIN 查询、查询执行、B-tree 索引、事务 ACID、并发控制、死锁检测、CLI 交互、端到端集成测试。
 
-## 最近修复 (v0.2.1)
+## 最近修复 (v0.2.3)
 
-- 修复 UPDATE 语句 WHERE 条件跳过行时的 NameError bug
-- 提取 `_JoinBase` 基类，消除三个 JOIN 算子 ~175 行重复代码
-- 移除脆弱的 `_is_complex_select` 字符串路由，所有 SELECT 统一走 SQL 引擎
-- 移除 database.py 中冗余的 regex 解析路径（`_exec_select`、`_exec_update`、`_exec_delete` 等）
-- INSERT/UPDATE/DELETE 统一通过 SQL 引擎执行，支持事务和索引自动同步
+- 统一 `QueryResult` 类型，消除重复定义和字段顺序不一致
+- 接入 `DeadlockDetector` 到 `LockManager`，实现真正的死锁检测
+- 修复 MVCC 写路径，`ensure_shadow` 创建影子页时记录版本
+- 修复 `ensure_shadow` 竞态条件（整个函数体在锁内执行）
+- UNIQUE/PRIMARY KEY 约束检查利用 B-tree 索引加速（O(log n) vs O(n)）
+- 精简 BufferPool：移除冗余双向链表，改用 OrderedDict + pinned set
+- 修复 bool/int 类型混淆（INTEGER 列不再接受 bool 值）
+- 提取 `ColumnDef.to_dict()` 消除 3 处重复的 JSON 序列化
+- 修复 SortOperator 双重 evaluate（用闭包缓存排序 key）
+- 修复 Catalog 写失败时的页泄漏（失败时回滚已分配页）
+- 优化 `slot_count` 读取（直接 struct.unpack_from 替代全 dict 解析）
+- 优化文件扩展（单次批量写入替代逐页循环）
+- 移除不可达的 sort_merge 分支
+- 删除死代码 `sql/database.py` (99行) 和重复测试
 
 ## 不为之事 (Out of Scope)
 
