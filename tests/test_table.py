@@ -6,7 +6,6 @@ from tinydb.buffer_pool import BufferPool
 from tinydb.catalog import Catalog
 from tinydb.types import ColumnDef, DataType
 from tinydb.exceptions import SchemaMismatchError
-from tinydb.page import PageType
 
 
 class TestTableCRUD:

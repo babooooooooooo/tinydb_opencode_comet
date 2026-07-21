@@ -3,7 +3,7 @@
 import struct
 from tinydb.types import DataType
 from tinydb.page import (
-    PageType, RowId, create_empty_page, parse_page_header, pack_page_header,
+    PageType, RowId, pack_page_header,
 )
 from tinydb.constants import PAGE_SIZE, PAGE_HEADER_SIZE, MAX_FREE_SPACE
 
@@ -93,7 +93,8 @@ class BTreeIndex:
         self._fm = buffer_pool._fm
         self._key_type = key_type
         self._ksz = key_size(key_type)
-        self._max_keys = compute_max_keys(self._ksz, is_leaf=True)
+        self._max_keys_leaf = compute_max_keys(self._ksz, is_leaf=True)
+        self._max_keys_internal = compute_max_keys(self._ksz, is_leaf=False)
 
         if root_page == 0:
             self._root_page = self._fm.alloc_page()
@@ -110,7 +111,7 @@ class BTreeIndex:
         key_bytes = encode_key(key, self._key_type)
         root_data = self._read_node(self._root_page)
 
-        if root_data["key_count"] >= self._max_keys:
+        if root_data["key_count"] >= self._max_keys_leaf:
             new_root = self._fm.alloc_page()
 
             left_page = self._root_page
@@ -215,7 +216,7 @@ class BTreeIndex:
             child_page = children[child_idx]
             child_node = self._read_node(child_page)
 
-            if child_node["key_count"] >= self._max_keys:
+            if child_node["key_count"] >= (self._max_keys_leaf if child_node["is_leaf"] else self._max_keys_internal):
                 self._split_child(page_id, child_idx)
                 node = self._read_node(page_id)
                 entries = node["entries"]
@@ -376,7 +377,7 @@ class BTreeIndex:
             }
 
     def _persist_node(self, page_id, node_flags, key_count, entries, children, next_leaf):
-        """Serialize and write a B-tree node to a page."""
+        """Serialize and write a B-tree node to a page via the buffer pool."""
         data = bytearray(PAGE_SIZE)
         header = pack_page_header(
             page_id=page_id,
@@ -415,6 +416,6 @@ class BTreeIndex:
                 struct.pack_into("<I", data, offset, child_page)
                 offset += 4
 
-        self._fm.write_page(page_id, bytes(data))
-        if page_id in self._pool._cache:
-            self._pool.set_page_data(page_id, bytes(data))
+        page_data = bytes(data)
+        self._pool.set_page_data(page_id, page_data)
+        self._pool._fm.write_page(page_id, page_data)

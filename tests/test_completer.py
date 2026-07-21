@@ -1,6 +1,4 @@
 # tests/test_completer.py
-import pytest
-from unittest.mock import MagicMock
 from tinydb.cli.completer import SQLCompleter
 from tinydb.database import Database
 

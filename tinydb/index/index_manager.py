@@ -1,7 +1,7 @@
 # tinydb/index/index_manager.py
 """Index Manager: manages index metadata and auto-updates on DML."""
 from dataclasses import dataclass
-from tinydb.types import DataType, ColumnDef
+from tinydb.types import DataType
 from tinydb.page import RowId
 from tinydb.index.btree import BTreeIndex
 

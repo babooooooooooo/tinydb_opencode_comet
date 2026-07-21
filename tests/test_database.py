@@ -1,7 +1,6 @@
 # tests/test_database.py
 import pytest
-from tinydb.database import Database, QueryResult
-from tinydb.types import ColumnDef, DataType
+from tinydb.database import Database
 
 
 @pytest.fixture

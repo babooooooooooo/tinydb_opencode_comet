@@ -3,7 +3,7 @@
 import pytest
 from tinydb.sql.parser import Parser
 from tinydb.sql.lexer import Lexer
-from tinydb.sql.ast import SelectStatement, TableRef, JoinClause
+from tinydb.sql.ast import TableRef
 from tinydb.sql.expressions import ColumnRef, BinaryOp
 
 

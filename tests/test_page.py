@@ -1,12 +1,11 @@
 """Tests for tinydb.page module."""
 import pytest
 from tinydb.page import (
-    Page, PageType, RowId, PAGE_HEADER_FORMAT,
-    create_empty_page, parse_page_header, pack_page_header,
+    Page, PageType, RowId, create_empty_page, parse_page_header, pack_page_header,
     insert_row_into_page, get_row_from_page, delete_row_from_page,
     get_all_rows_from_page, get_free_space, get_slot_count,
 )
-from tinydb.constants import PAGE_SIZE, PAGE_HEADER_SIZE, SLOT_SIZE, MAX_FREE_SPACE
+from tinydb.constants import PAGE_SIZE, PAGE_HEADER_SIZE, MAX_FREE_SPACE
 
 
 class TestPageType:

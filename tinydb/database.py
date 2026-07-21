@@ -5,8 +5,7 @@ from tinydb.file_manager import FileManager
 from tinydb.buffer_pool import BufferPool
 from tinydb.catalog import Catalog
 from tinydb.index.index_manager import IndexManager
-from tinydb.transaction.txn_manager import TransactionManager, TransactionError
-from tinydb.concurrency.isolation import IsolationLevel
+from tinydb.transaction.txn_manager import TransactionManager
 from tinydb.sql.planner import Planner
 from tinydb.query_result import QueryResult
 from tinydb.types import ColumnDef, DataType
@@ -73,10 +72,16 @@ class Database:
                 return self._exec_sql_select(sql)
             else:
                 return self._exec_sql_dml(sql)
+        except DatabaseError:
+            raise
         except Exception as e:
-            if self._txn_mgr.has_active_txn():
+            # Determine if this is a parse/lex error (no data modification happened)
+            # vs an operational error (partial modifications may exist).
+            from tinydb.sql.errors import SQLError
+            is_parse_error = isinstance(e, SQLError)
+            if not is_parse_error and self._txn_mgr.has_active_txn():
                 self._txn_mgr.rollback()
-            raise DatabaseError(str(e))
+            raise DatabaseError(str(e)) from e
 
     def _exec_sql_select(self, sql: str) -> QueryResult:
         """Execute SELECT via the full SQL engine (supports JOINs, GROUP BY, aggregates)."""
@@ -86,9 +91,8 @@ class Database:
         stmt = Parser().parse(tokens)
         if stmt is None:
             raise DatabaseError("Failed to parse SQL")
-        plan = self._planner.plan(stmt)
         pool = self._get_pool()
-        operator = plan
+        operator = self._planner.plan(stmt, pool=pool)
         rows = list(operator)
 
         if rows and isinstance(rows[0], dict):
@@ -122,11 +126,16 @@ class Database:
         return result["_result"]
 
     def _get_pool(self):
-        """Return active pool: shadow pool if in transaction, else main pool."""
+        """Return active pool: shadow pool if in transaction, else main pool.
+
+        When multiple transactions are active, uses the first one (by txn_id).
+        The lock manager provides isolation between concurrent transactions.
+        """
         if self._txn_mgr.has_active_txn():
             from tinydb.transaction.shadow_paging import ShadowBufferPool
-            entry = next(iter(self._txn_mgr.get_active_txns().values()))
-            return ShadowBufferPool(self._pool, entry.txn, self._fm, mvcc_manager=self._txn_mgr._mvcc)
+            active = self._txn_mgr.get_active_txns()
+            first_entry = active[min(active)]
+            return ShadowBufferPool(self._pool, first_entry.txn, self._fm, mvcc_manager=self._txn_mgr._mvcc)
         return self._pool
 
     def commit(self):

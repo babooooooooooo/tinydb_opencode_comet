@@ -44,9 +44,8 @@ class ShadowBufferPool:
     def set_page_data(self, page_id: int, data: bytes) -> None:
         """Write page data, creating shadow page on first write (CoW)."""
         shadow_id = self._ensure_shadow(page_id)
-        self._pool._fm.write_page(shadow_id, data)
-        if shadow_id in self._pool._cache:
-            self._pool.set_page_data(shadow_id, data)
+        self._pool.set_page_data(shadow_id, data)
+        self._pool.mark_dirty(shadow_id)
 
     def mark_dirty(self, page_id: int) -> None:
         """Mark page as dirty."""
@@ -79,8 +78,19 @@ class ShadowBufferPool:
         if page_id in self._txn.shadow_pages:
             return self._txn.shadow_pages[page_id]
 
+        from tinydb.page import Page
+
         shadow_id = self._fm.alloc_page()
         orig_data = self._pool.get_page(page_id)
-        self._pool._fm.write_page(shadow_id, orig_data)
+        self._fm.write_page(shadow_id, orig_data)
+        page = Page(
+            page_id=shadow_id,
+            page_type=None,
+            data=orig_data,
+            dirty=False,
+        )
+        with self._pool._lock:
+            self._pool._cache[shadow_id] = page
+            self._pool._cache.move_to_end(shadow_id)
         self._txn.shadow_pages[page_id] = shadow_id
         return shadow_id

@@ -8,7 +8,7 @@ from tinydb.sql.ast import (
     ColumnDefAST,
 )
 from tinydb.sql.expressions import (
-    ColumnRef, Literal, BinaryOp, StarExpr, AggregateExpr,
+    ColumnRef, BinaryOp, StarExpr, AggregateExpr,
     IsNullExpr, UnaryOp,
 )
 from tinydb.sql.errors import ParserError

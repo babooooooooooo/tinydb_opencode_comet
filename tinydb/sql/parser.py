@@ -1,5 +1,5 @@
 """Recursive descent SQL parser."""
-from tinydb.sql.lexer import Token, TokenType, Lexer
+from tinydb.sql.lexer import Token, TokenType
 from tinydb.sql.ast import (
     SelectStatement, InsertStatement, UpdateStatement,
     DeleteStatement, CreateTableStatement, DropTableStatement,

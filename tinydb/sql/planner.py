@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from tinydb.sql.ast import (
     SelectStatement, InsertStatement, UpdateStatement,
     DeleteStatement, CreateTableStatement, DropTableStatement,
-    TableRef, JoinClause,
+    JoinClause,
 )
 from tinydb.sql.expressions import (
-    Expression, ColumnRef, AggregateExpr, StarExpr, BinaryOp, _to_bool,
+    ColumnRef, AggregateExpr, StarExpr, BinaryOp,
 )
 from tinydb.sql.executor import (
     Operator, ScanOperator, FilterOperator, ProjectOperator,
@@ -33,9 +33,11 @@ class JoinPlanner:
         self.catalog = catalog
         self.buffer_pool = buffer_pool
 
-    def plan_joins(self, from_table, joins, where):
+    def plan_joins(self, from_table, joins, where, pool=None):
         """Build operator tree for FROM + JOINs."""
-        left = self._build_join_input(from_table)
+        if pool is None:
+            pool = self.buffer_pool
+        left = self._build_join_input(from_table, pool)
 
         if not joins:
             return left.op
@@ -45,7 +47,7 @@ class JoinPlanner:
             if join.join_type == "NATURAL":
                 join = self._resolve_natural_join(left, join)
 
-            right = self._build_join_input(join.right_table)
+            right = self._build_join_input(join.right_table, pool)
             join_keys = self._extract_join_keys(join)
             algorithm = self._choose_algorithm(join, left, right, join_keys)
             join_op = self._build_join_operator(algorithm, left, right, join, join_keys)
@@ -79,10 +81,12 @@ class JoinPlanner:
             using_columns=[key],
         )
 
-    def _build_join_input(self, tableref):
+    def _build_join_input(self, tableref, pool=None):
         """Build scan operator + metadata for a table reference."""
+        if pool is None:
+            pool = self.buffer_pool
         table = self.catalog.get_table(tableref.name)
-        op = ScanOperator(table, self.buffer_pool)
+        op = ScanOperator(table, pool)
         columns = [c.name for c in table.columns]
         return _JoinInput(op, tableref.name, tableref.alias, columns)
 
@@ -173,7 +177,7 @@ class Planner:
         if pool is None:
             pool = self.buffer_pool
         if stmt.joins:
-            op = self._join_planner.plan_joins(stmt.from_table, stmt.joins, stmt.where)
+            op = self._join_planner.plan_joins(stmt.from_table, stmt.joins, stmt.where, pool=pool)
         else:
             table = self.catalog.get_table(stmt.from_table.name)
             op = ScanOperator(table, pool)

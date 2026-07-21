@@ -1,12 +1,10 @@
 """Tests for executor operators."""
-import pytest
 from tinydb.sql.executor import (
     ScanOperator, FilterOperator, ProjectOperator,
     AggregateOperator, SortOperator, LimitOperator,
 )
 from tinydb.sql.expressions import (
-    ColumnRef, Literal, BinaryOp, AggregateExpr, StarExpr,
-    _to_bool,
+    ColumnRef, Literal, BinaryOp, StarExpr,
 )
 from tinydb.types import ColumnDef, DataType
 

@@ -1,5 +1,4 @@
 # tests/test_commands.py
-import pytest
 from tinydb.cli.commands import CommandHandler
 from tinydb.database import Database
 

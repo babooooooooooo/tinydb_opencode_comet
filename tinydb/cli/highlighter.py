@@ -1,6 +1,5 @@
 # tinydb/cli/highlighter.py
 """SQL syntax highlighter using pygments with graceful degradation."""
-import re
 
 
 class SQLHighlighter:

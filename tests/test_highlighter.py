@@ -1,5 +1,4 @@
 # tests/test_highlighter.py
-import pytest
 from tinydb.cli.highlighter import SQLHighlighter
 
 

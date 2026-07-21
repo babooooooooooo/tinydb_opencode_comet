@@ -2,7 +2,7 @@
 
 一个从零构建的 Python 嵌入式关系型数据库，用于教学和学习数据库核心原理。
 
-当前版本: **v0.2.3**
+当前版本: **v0.2.4**
 
 ## 特性
 
@@ -152,7 +152,7 @@ tinydb/
     ├── completer.py
     └── commands.py
 
-tests/                   # pytest 测试套件 (446 tests)
+tests/                   # pytest 测试套件 (444 tests)
 ├── concurrency/          # 并发控制测试
 │   ├── test_lock_manager.py
 │   ├── test_mvcc_manager.py
@@ -195,7 +195,7 @@ tests/                   # pytest 测试套件 (446 tests)
 
 - 并发控制在页粒度实现（S/X 锁），多线程读写安全
 - 删除后空间不立即回收（无 compaction）
-- MVCC 版本 GC 为手动触发（无后台清理线程）
+- MVCC 版本 GC 在每次 commit 时自动触发
 - 无 WAL（使用 Shadow Paging）
 - 目录表使用 JSON 存储列定义（灵活可读）
 - B-tree 不实现重平衡合并
@@ -209,7 +209,33 @@ pytest tests/ -v
 
 覆盖：类型检查、行序列化、页操作、缓冲池 LRU、文件管理、目录 CRUD、SQL 解析、JOIN 查询、查询执行、B-tree 索引、事务 ACID、并发控制、死锁检测、CLI 交互、端到端集成测试。
 
-## 最近修复 (v0.2.3)
+## 最近修复 (v0.2.4)
+
+### CRITICAL
+- **修复事务 SELECT 不可见自身写入** — 正确传递 shadow pool 到 planner，事务内 SELECT/INSERT/UPDATE/DELETE 均可看到未提交的修改
+- **修复索引绕过事务** — B-tree 写入经 buffer pool CoW 路由，ROLLBACK 后索引不再残留无效条目
+- **修复解析错误误杀事务** — SQL 解析/词法错误不再触发自动回滚（符合 SQL 标准行为）
+
+### HIGH
+- **BufferPool 线程安全** — 添加 threading.Lock 保护 cache/pinned 数据结构，消除并发竞态
+- **表扫描隔离** — 扫描期间持有根页共享锁，防止并发页链修改
+- **多事务支持** — 按 txn_id 确定性选择活动事务，支持多事务并发
+
+### MEDIUM
+- **MVCC GC 自动触发** — 每次 commit 后自动回收不可见版本，防止内存泄漏
+- **B-tree 内部节点容量** — 分别计算 leaf/internal max_keys，减少不必要的分裂
+- **删除死代码** — 移除未使用的 `IndexScanOperator` 类及关联测试
+- **清理无用属性** — 删除 commit 中对不存在的 `_head`/`_tail` 的属性写入
+
+### LOW
+- **锁释放惊群修复** — 仅在锁完全释放时唤醒所有等待者，否则仅唤醒一个
+- **NULL 排序合规** — `ORDER BY ASC` 中 NULL 排首位（SQL 标准行为）
+- **影子页脏页跟踪** — 所有影子页写入经 buffer pool dirty 跟踪，确保一致性
+
+### 代码卫生
+- 修复 27 处 F401/F841/E402 警告，源码和测试 ruff 零警告
+
+## 历史修复 (v0.2.3)
 
 - 统一 `QueryResult` 类型，消除重复定义和字段顺序不一致
 - 接入 `DeadlockDetector` 到 `LockManager`，实现真正的死锁检测

@@ -3,8 +3,6 @@ import pytest
 from tinydb.sql.planner import Planner, ScanOperator, FilterOperator, ProjectOperator, SortOperator, LimitOperator, AggregateOperator
 from tinydb.sql.parser import Parser
 from tinydb.sql.lexer import Lexer
-from tinydb.sql.expressions import ColumnRef, Literal, BinaryOp, AggregateExpr, StarExpr
-from tinydb.sql.errors import PlanningError
 
 
 class TestPlanner:

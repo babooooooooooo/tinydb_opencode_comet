@@ -1,6 +1,6 @@
 """Tests for SQL lexer."""
 import pytest
-from tinydb.sql.lexer import Token, TokenType, Lexer
+from tinydb.sql.lexer import TokenType, Lexer
 from tinydb.sql.errors import LexerError
 
 

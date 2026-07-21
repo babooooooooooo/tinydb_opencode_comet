@@ -1,7 +1,6 @@
 """Tests for tinydb.concurrency.lock_manager module."""
 import threading
 import time
-import pytest
 from tinydb.concurrency.lock_manager import LockMode, LockManager
 
 

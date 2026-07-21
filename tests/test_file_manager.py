@@ -3,9 +3,9 @@
 import os
 import pytest
 from tinydb.file_manager import FileManager
-from tinydb.page import create_empty_page, PageType, parse_page_header
+from tinydb.page import create_empty_page, PageType
 from tinydb.exceptions import StorageCorruptionError, PageOutOfRangeError
-from tinydb.constants import MAGIC_BYTES, PAGE_SIZE
+from tinydb.constants import PAGE_SIZE
 
 
 class TestFileManagerOpen:

@@ -121,8 +121,6 @@ class CommandHandler:
 
     def _import(self, arg: str) -> str:
         """Import data from a CSV or JSON file into a table."""
-        import csv
-        import json
         import os
 
         parts = arg.strip().split()
@@ -218,8 +216,6 @@ class CommandHandler:
 
     def _dump(self, arg: str) -> str:
         """Export table data to CSV (stdout) or a file."""
-        import csv
-        import json
         import os
 
         parts = arg.strip().split()

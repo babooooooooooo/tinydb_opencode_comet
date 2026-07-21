@@ -1,12 +1,11 @@
 """Volcano model executor operators."""
 from tinydb.sql.expressions import (
-    Expression, ColumnRef, AggregateExpr, StarExpr, _to_bool,
+    ColumnRef, Expression, StarExpr, _to_bool,
 )
 from tinydb.sql.ast import (
-    SelectStatement, InsertStatement, UpdateStatement,
-    DeleteStatement, CreateTableStatement, DropTableStatement,
+    InsertStatement, UpdateStatement, DeleteStatement,
 )
-from tinydb.sql.errors import ExecutionError, ConstraintError
+from tinydb.sql.errors import ConstraintError
 from tinydb.query_result import QueryResult
 from tinydb.types import ColumnDef, DataType
 
@@ -468,7 +467,7 @@ class SortOperator(Operator):
     def _sort_key(expr):
         def key(row):
             val = expr.evaluate(row)
-            return (val is None, val or 0)
+            return (0 if val is None else 1, val if val is not None else 0)
         return key
 
 
@@ -668,53 +667,4 @@ class DropTableOperator(Operator):
         return QueryResult([], [], 0)
 
 
-# === IndexScanOperator (integrated from tinydb-index-txn) ===
 
-from tinydb.index.btree import BTreeIndex
-from tinydb.index.index_manager import IndexMeta
-
-
-class IndexScanOperator:
-    """使用 B-tree 索引进行等值/范围扫描的算子。"""
-
-    def __init__(self, table, index_meta: IndexMeta, condition):
-        self.table = table
-        self.index = index_meta
-        self.condition = condition
-
-    def execute(self, buffer_pool):
-        btree = BTreeIndex(buffer_pool, key_type=self.index.column_type,
-                           root_page=self.index.root_page)
-        op = self.condition.op
-        key = self.condition.value
-
-        if op == "=":
-            results = btree.search(key)
-        elif op == ">":
-            results = btree.range_scan(start=key, end=None, start_inclusive=False)
-        elif op == ">=":
-            results = btree.range_scan(start=key, end=None, start_inclusive=True)
-        elif op == "<":
-            results = btree.range_scan(start=None, end=key, end_inclusive=False)
-        elif op == "<=":
-            results = btree.range_scan(start=None, end=key, end_inclusive=True)
-        elif op == "!=":
-            # != 回退到全表扫描 + 过滤
-            results = []
-            for row_ptr, row in self.table.scan(buffer_pool):
-                col_idx = next(
-                    (i for i, c in enumerate(self.table.columns)
-                     if c.name == self.condition.column), -1
-                )
-                if col_idx >= 0 and row[col_idx] != key:
-                    results.append(row_ptr)
-        else:
-            raise ValueError(f"Unsupported operator for index scan: {op}")
-
-        # 通过 row_ptr 从表中获取完整行
-        rows = []
-        for row_ptr in results:
-            row = self.table.get(buffer_pool, row_ptr)
-            if row is not None:
-                rows.append(row)
-        return rows

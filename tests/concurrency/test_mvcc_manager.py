@@ -1,6 +1,5 @@
 """Tests for tinydb.concurrency.mvcc_manager module."""
 import time
-import pytest
 from tinydb.concurrency.mvcc_manager import PageVersion, Snapshot, MVCCManager
 
 

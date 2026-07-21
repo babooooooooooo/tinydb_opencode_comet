@@ -1,7 +1,5 @@
 # tests/test_file_header_ext.py
 """Tests for file header extension: root_page_id + version bump."""
-import os
-import pytest
 from tinydb.file_manager import FileManager
 from tinydb.constants import FORMAT_VERSION
 
@@ -29,7 +27,8 @@ class TestFileHeaderExtension:
     def test_backward_compat_v1(self, tmp_path):
         """向后兼容：读取 version=1 的数据库文件"""
         db_path = str(tmp_path / "v1.db")
-        import struct, zlib
+        import struct
+        import zlib
         from tinydb.constants import MAGIC_BYTES, PAGE_SIZE
         raw = bytearray(PAGE_SIZE)
         raw[:8] = MAGIC_BYTES

@@ -1,6 +1,5 @@
 # tests/sql/test_join_planner.py
 """Tests for JOIN planner."""
-import pytest
 from tinydb.sql.planner import JoinPlanner
 from tinydb.sql.executor import (
     ScanOperator, NestedLoopJoinOperator, FilterOperator, ProjectOperator,

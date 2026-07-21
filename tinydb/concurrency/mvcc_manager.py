@@ -95,4 +95,6 @@ class MVCCManager:
         than all currently active transactions (i.e., no active or future
         transaction could ever need it).
         """
+        if not active_txns:
+            return True
         return version.created_txn < min(active_txns)

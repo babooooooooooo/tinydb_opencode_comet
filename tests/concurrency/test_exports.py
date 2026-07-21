@@ -1,7 +1,6 @@
 """Verify public API exports."""
 from tinydb.concurrency import (
-    IsolationLevel, default_isolation, validate_isolation,
-    LockMode, LockManager,
+    IsolationLevel, LockMode, LockManager,
     PageVersion, Snapshot, MVCCManager,
     DeadlockDetector,
 )

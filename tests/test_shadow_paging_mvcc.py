@@ -4,7 +4,6 @@ from tinydb.transaction.shadow_paging import Transaction, ShadowBufferPool
 from tinydb.concurrency.mvcc_manager import MVCCManager, Snapshot
 from tinydb.file_manager import FileManager
 from tinydb.buffer_pool import BufferPool
-from tinydb.page import create_empty_page, PageType
 
 
 @pytest.fixture
@@ -27,7 +26,7 @@ class TestShadowPagingMVCC:
         )
         shadow = ShadowBufferPool(pool, txn, fm, mvcc_manager=mvcc)
         # After commit, a version should exist in MVCC
-        snap = Snapshot(active_txns={1}, timestamp=0.0)
+        Snapshot(active_txns={1}, timestamp=0.0)
         # The shadow paging commit writes to disk; MVCC version created separately
         # This test verifies the integration point exists
         assert hasattr(shadow, '_mvcc')

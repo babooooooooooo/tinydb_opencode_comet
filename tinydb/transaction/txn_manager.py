@@ -5,7 +5,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from tinydb.transaction.shadow_paging import Transaction
-from tinydb.concurrency.lock_manager import LockManager, LockMode
+from tinydb.concurrency.lock_manager import LockManager
 from tinydb.concurrency.mvcc_manager import MVCCManager, Snapshot
 from tinydb.concurrency.deadlock_detector import DeadlockDetector
 from tinydb.concurrency.isolation import IsolationLevel, default_isolation
@@ -77,11 +77,11 @@ class TransactionManager:
             self._fm._file.flush()
             os.fsync(self._fm._file.fileno())
             self._pool._cache.clear()
-            self._pool._head = None
-            self._pool._tail = None
             txn.state = "committed"
             self._lock_mgr.release_all(txn.txn_id)
             self._deadlock_detector.clear_txn(txn.txn_id)
+            active_ids = set(self._active_txns.keys()) - {txn.txn_id}
+            self._mvcc.gc(active_ids)
             del self._active_txns[txn.txn_id]
 
     def rollback(self, txn_id: int | None = None):

@@ -1,7 +1,7 @@
 """Tests for expression tree and evaluation."""
 import pytest
 from tinydb.sql.expressions import (
-    Expression, ColumnRef, Literal, BinaryOp, UnaryOp,
+    ColumnRef, Literal, BinaryOp, UnaryOp,
     AggregateExpr, StarExpr, IsNullExpr,
     _to_bool, _compare_eq, _compare_lt,
 )

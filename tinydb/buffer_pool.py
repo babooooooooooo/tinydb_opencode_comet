@@ -7,11 +7,12 @@ NOTE: get_page() returns raw bytes (not a Page object) deliberately.
 Table-level code works with mutable bytearray views for in-place edits,
 so the pool exposes bytes while callers manage their own deserialization.
 """
+import threading
 from collections import OrderedDict
 
 from tinydb.constants import DEFAULT_BUFFER_POOL_CAPACITY
 from tinydb.exceptions import PageOutOfRangeError
-from tinydb.page import Page, PageType, parse_page_header
+from tinydb.page import Page, parse_page_header
 
 
 def _get_lock_mgr(pool):
@@ -38,6 +39,7 @@ class BufferPool:
         self._capacity = capacity
         self._cache: OrderedDict[int, Page] = OrderedDict()
         self._pinned: set[int] = set()
+        self._lock = threading.Lock()
 
         # Concurrency control
         from tinydb.concurrency.lock_manager import LockManager
@@ -51,7 +53,6 @@ class BufferPool:
 
     def get_page(self, page_id: int, txn_id: int | None = None, snapshot=None) -> bytes:
         """Get a page from cache or disk. If snapshot provided, return MVCC visible version."""
-        from tinydb.concurrency.mvcc_manager import Snapshot
         # Try MVCC first if snapshot provided
         if snapshot is not None:
             mvcc = _get_mvcc(self)
@@ -60,11 +61,12 @@ class BufferPool:
                 return mvcc_data
             # No visible version — fall through to disk/cache
 
-        if page_id in self._cache:
-            self._cache.move_to_end(page_id)
-            return self._cache[page_id].data
+        with self._lock:
+            if page_id in self._cache:
+                self._cache.move_to_end(page_id)
+                return self._cache[page_id].data
 
-        # Fetch from disk
+        # Fetch from disk (outside lock for I/O concurrency)
         raw = self._fm.read_page(page_id)
         header = parse_page_header(raw)
         page = Page(
@@ -74,38 +76,45 @@ class BufferPool:
             dirty=False,
         )
 
-        # Insert into pool (may trigger eviction)
-        self._insert_page(page_id, page)
-        return page.data
+        with self._lock:
+            # Double-check: another thread may have loaded it
+            if page_id in self._cache:
+                self._cache.move_to_end(page_id)
+                return self._cache[page_id].data
+            # Insert into pool (may trigger eviction)
+            self._insert_page(page_id, page)
+            return page.data
 
     def mark_dirty(self, page_id: int) -> None:
         """Mark a cached page as dirty."""
-        if page_id in self._cache:
-            self._cache[page_id].dirty = True
+        with self._lock:
+            if page_id in self._cache:
+                self._cache[page_id].dirty = True
 
     def set_page_data(self, page_id: int, data: bytes) -> None:
         """Update cached page data and mark it dirty."""
-        if page_id in self._cache:
-            self._cache[page_id].data = data
-            self._cache[page_id].dirty = True
+        with self._lock:
+            if page_id in self._cache:
+                self._cache[page_id].data = data
+                self._cache[page_id].dirty = True
 
     def pin(self, page_id: int, txn_id: int | None = None, mode=None) -> None:
         """Pin a page to prevent eviction. Optionally acquires a lock."""
-        from tinydb.concurrency.lock_manager import LockMode
-        if page_id not in self._cache:
-            # Fetch from disk and pin immediately
-            raw = self._fm.read_page(page_id)
-            header = parse_page_header(raw)
-            page = Page(
-                page_id=page_id,
-                page_type=header["page_type"],
-                data=raw,
-                dirty=False,
-            )
-            self._insert_page(page_id, page, pinned=True)
-        else:
-            self._pinned.add(page_id)
-            self._cache.move_to_end(page_id)
+        with self._lock:
+            if page_id not in self._cache:
+                # Fetch from disk and pin immediately
+                raw = self._fm.read_page(page_id)
+                header = parse_page_header(raw)
+                page = Page(
+                    page_id=page_id,
+                    page_type=header["page_type"],
+                    data=raw,
+                    dirty=False,
+                )
+                self._insert_page(page_id, page, pinned=True)
+            else:
+                self._pinned.add(page_id)
+                self._cache.move_to_end(page_id)
 
         # Acquire lock if txn_id and mode provided
         if txn_id is not None and mode is not None:
@@ -114,7 +123,8 @@ class BufferPool:
 
     def unpin(self, page_id: int, txn_id: int | None = None) -> None:
         """Unpin a page. Optionally releases a lock."""
-        self._pinned.discard(page_id)
+        with self._lock:
+            self._pinned.discard(page_id)
 
         # Release lock if txn_id provided
         if txn_id is not None and hasattr(self, '_lock_mgr'):
@@ -122,15 +132,21 @@ class BufferPool:
 
     def flush(self) -> None:
         """Write all dirty pages to disk."""
-        for page in self._cache.values():
-            if page.dirty:
-                self._fm.write_page(page.page_id, page.data)
-                page.dirty = False
+        with self._lock:
+            dirty_pages = [
+                (page.page_id, page.data) for page in self._cache.values() if page.dirty
+            ]
+        for page_id, data in dirty_pages:
+            self._fm.write_page(page_id, data)
+        with self._lock:
+            for page in self._cache.values():
+                if page.dirty:
+                    page.dirty = False
 
-    # --- Internal methods ---
+    # --- Internal methods (caller must hold self._lock) ---
 
     def _insert_page(self, page_id: int, page: Page, pinned: bool = False) -> None:
-        """Insert page into cache, evicting if necessary."""
+        """Insert page into cache, evicting if necessary. Caller must hold _lock."""
         if pinned:
             self._cache[page_id] = page
             self._cache.move_to_end(page_id)
@@ -144,7 +160,7 @@ class BufferPool:
             self._cache.move_to_end(page_id)
 
     def _evict_one(self) -> None:
-        """Evict the LRU page that is not pinned."""
+        """Evict the LRU page that is not pinned. Caller must hold _lock."""
         for pid, page in self._cache.items():
             if pid not in self._pinned:
                 if page.dirty:

@@ -13,7 +13,7 @@ from tinydb.row_format import serialize_row, deserialize_row
 from tinydb.page import (
     PageType, RowId, create_empty_page,
     insert_row_into_page, get_row_from_page, delete_row_from_page,
-    get_free_space, parse_page_header, pack_page_header,
+    parse_page_header, pack_page_header,
 )
 from tinydb.concurrency.lock_manager import LockMode
 
@@ -94,31 +94,35 @@ class Table:
     def scan(self, buffer_pool, ctx=None):
         """Yield (RowId, row_values) tuples for all rows in the table."""
         page_id = self.root_page
+        txn_id = ctx.txn_id if ctx else None
 
-        while page_id != 0:
-            txn_id = ctx.txn_id if ctx else None
-            mode = LockMode.SHARED if ctx else None
-            snapshot = ctx.snapshot if ctx else None
+        # Acquire shared lock on root page for duration of scan to prevent
+        # concurrent page chain modifications.
+        if txn_id is not None:
+            buffer_pool.pin(page_id, txn_id=txn_id, mode=LockMode.SHARED)
 
-            buffer_pool.pin(page_id, txn_id=txn_id, mode=mode)
-            page_data = buffer_pool.get_page(page_id, txn_id=txn_id, snapshot=snapshot)
-            header = parse_page_header(page_data)
-            if header["page_type"] != PageType.DATA:
-                buffer_pool.unpin(page_id, txn_id=txn_id)
-                break
+        try:
+            while page_id != 0:
+                snapshot = ctx.snapshot if ctx else None
+                page_data = buffer_pool.get_page(page_id, txn_id=txn_id, snapshot=snapshot)
+                header = parse_page_header(page_data)
+                if header["page_type"] != PageType.DATA:
+                    break
 
-            # Read all valid rows from this page
-            page = _page_from_data(page_id, page_data)
-            for slot_idx in range(header["slot_count"]):
-                row_data = get_row_from_page(page, slot_idx)
-                if row_data is None:
-                    continue
-                values = deserialize_row(row_data, self.columns)
-                if values is not None:
-                    yield RowId(page_id=page_id, slot_index=slot_idx), values
+                # Read all valid rows from this page
+                page = _page_from_data(page_id, page_data)
+                for slot_idx in range(header["slot_count"]):
+                    row_data = get_row_from_page(page, slot_idx)
+                    if row_data is None:
+                        continue
+                    values = deserialize_row(row_data, self.columns)
+                    if values is not None:
+                        yield RowId(page_id=page_id, slot_index=slot_idx), values
 
-            buffer_pool.unpin(page_id, txn_id=txn_id)
-            page_id = header["next_page_id"]
+                page_id = header["next_page_id"]
+        finally:
+            if txn_id is not None:
+                buffer_pool.unpin(self.root_page, txn_id=txn_id)
 
     def get(self, buffer_pool, row_id: RowId) -> list | None:
         """Get a single row by RowId."""

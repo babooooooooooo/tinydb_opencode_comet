@@ -1,12 +1,11 @@
 # tests/test_transaction.py
 import pytest
-from tinydb.transaction.txn_manager import TransactionManager, TransactionError, TransactionEntry
+from tinydb.transaction.txn_manager import TransactionManager, TransactionError
 from tinydb.concurrency.isolation import IsolationLevel
 from tinydb.file_manager import FileManager
 from tinydb.buffer_pool import BufferPool
 from tinydb.catalog import Catalog
 from tinydb.index.index_manager import IndexManager
-from tinydb.page import create_empty_page, PageType
 
 
 @pytest.fixture

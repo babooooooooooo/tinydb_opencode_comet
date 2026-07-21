@@ -98,10 +98,17 @@ class LockManager:
                 self._wait_queue[page_id] = deque(
                     e for e in self._wait_queue[page_id] if e[0] != txn_id
                 )
-            # Notify waiters
+            # Notify waiters: if lock is now free, wake all shared waiters;
+            # otherwise wake just one to recheck compatibility.
             if page_id in self._wait_queue:
-                for _, _, cond in self._wait_queue[page_id]:
-                    cond.notify()
+                waiters = self._wait_queue[page_id]
+                if page_id not in self._holders:
+                    # Page is free — wake all waiters
+                    for _, _, cond in waiters:
+                        cond.notify()
+                elif waiters:
+                    # Page still locked — wake one waiter to recheck
+                    waiters[0][2].notify()
 
     def release_all(self, txn_id: int) -> None:
         """Release all locks held by a transaction."""

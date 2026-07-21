@@ -1,10 +1,9 @@
 # tests/sql/test_join_executor.py
 """Tests for JOIN executor operators."""
-import pytest
 from tinydb.sql.executor import (
     ScanOperator, NestedLoopJoinOperator,
 )
-from tinydb.sql.expressions import ColumnRef, Literal, BinaryOp, _to_bool
+from tinydb.sql.expressions import ColumnRef, BinaryOp
 from tinydb.types import ColumnDef, DataType
 
 

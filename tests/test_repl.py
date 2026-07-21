@@ -1,6 +1,5 @@
 # tests/test_repl.py
 import pytest
-from unittest.mock import patch
 from tinydb.cli.repl import REPL
 from tinydb.database import Database, QueryResult
 

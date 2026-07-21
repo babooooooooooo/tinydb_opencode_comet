@@ -1,5 +1,4 @@
 """Tests for tinydb.concurrency.deadlock_detector module."""
-import pytest
 from tinydb.concurrency.deadlock_detector import DeadlockDetector
 
 

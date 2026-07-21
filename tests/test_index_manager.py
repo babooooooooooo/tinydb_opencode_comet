@@ -1,9 +1,7 @@
 # tests/test_index_manager.py
 import pytest
-from tinydb.index.index_manager import IndexManager, IndexMeta
-from tinydb.index.btree import BTreeIndex
+from tinydb.index.index_manager import IndexManager
 from tinydb.types import DataType, ColumnDef
-from tinydb.page import RowId
 from tinydb.file_manager import FileManager
 from tinydb.buffer_pool import BufferPool
 from tinydb.catalog import Catalog

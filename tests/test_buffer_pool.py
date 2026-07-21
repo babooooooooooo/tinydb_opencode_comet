@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock
 from tinydb.buffer_pool import BufferPool
-from tinydb.page import create_empty_page, PageType, parse_page_header
+from tinydb.page import PageType
 from tinydb.constants import PAGE_SIZE
 
 

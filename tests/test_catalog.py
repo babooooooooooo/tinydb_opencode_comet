@@ -3,7 +3,7 @@
 import pytest
 from tinydb.file_manager import FileManager
 from tinydb.buffer_pool import BufferPool
-from tinydb.catalog import Catalog, TableMeta
+from tinydb.catalog import Catalog
 from tinydb.types import ColumnDef, DataType
 from tinydb.exceptions import TableExistsError, TableNotFoundError
 

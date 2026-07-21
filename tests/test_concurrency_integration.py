@@ -1,7 +1,6 @@
 """End-to-end concurrency integration tests."""
 import threading
 import time
-import pytest
 from tinydb.concurrency.lock_manager import LockManager, LockMode
 from tinydb.concurrency.mvcc_manager import MVCCManager, Snapshot
 from tinydb.concurrency.deadlock_detector import DeadlockDetector
