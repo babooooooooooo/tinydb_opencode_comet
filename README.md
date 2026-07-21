@@ -2,7 +2,11 @@
 
 一个从零构建的 Python 嵌入式关系型数据库，用于教学和学习数据库核心原理。
 
-当前版本: **v0.2.4**
+**版本**: tinydb v0.2  
+**仓库**: https://github.com/babooooooooooo/tinydb_opencode_comet  
+**开发工具**: Open Code + LongCat + Comet  
+**代码量级**: 源码 4,389 行，测试代码 3,662 行  
+**测试**: 473 个测试（单元测试占比 89.8%），覆盖率 87%
 
 ## 特性
 
